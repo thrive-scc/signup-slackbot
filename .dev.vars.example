@@ -1,0 +1,12 @@
+# Admin preview needs no secrets. Signup requires all three values below.
+# Use npm run setup:demo in the container to generate local-only keys safely,
+# or copy this file to .dev.vars and set your own values. Never commit real keys.
+SLACK_SIGNING_SECRET=
+CALENDAR_SIGNING_KEY=
+PUBLIC_ORIGIN=http://localhost:8787
+# For real Slack, use its signing secret and your public HTTPS origin.
+# An immediate slash-command response needs no Slack bot token.
+# Guided controls and admin cancellation notifications also require these.
+# One bot installation/workspace per deployment; invite the bot to the group channel.
+SLACK_BOT_TOKEN=
+SLACK_BOT_WORKSPACE_ID=

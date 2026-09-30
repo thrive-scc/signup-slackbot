@@ -1,0 +1,35 @@
+{
+  "display_information": {
+    "name": "Snack signup",
+    "description": "Coordinate snacks for your life group",
+    "background_color": "#2d5743"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Snack signup",
+      "always_online": false
+    },
+    "slash_commands": [
+      {
+        "command": "/snack",
+        "url": "https://replace-before-install.example/slack/commands",
+        "description": "Volunteer to bring snacks for a class",
+        "usage_hint": "list | mine | signup YYYY-MM-DD | cancel YYYY-MM-DD | change FROM TO",
+        "should_escape": true
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": ["commands", "chat:write"]
+    }
+  },
+  "settings": {
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://replace-before-install.example/slack/interactions"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false
+  }
+}

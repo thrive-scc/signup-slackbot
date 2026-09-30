@@ -1,0 +1,9 @@
+{
+  "team_id": "T_FIXTURE",
+  "channel_id": "C_FIXTURE",
+  "user_id": "U_FIXTURE",
+  "command": "/snack",
+  "text": "",
+  "trigger_id": "fixture-trigger-001",
+  "response_url": "https://hooks.slack.invalid/commands/fixture"
+}
