@@ -5,7 +5,6 @@ import { signupStore } from './adapters/d1/signups';
 import {
   escapeSlack,
   operationMessage,
-  privacy,
 } from './adapters/slack/messages';
 import {
   sendSlack,
@@ -85,7 +84,7 @@ export async function deliverPending(
         const notice = job.kind === 'CANCELLATION_NOTICE';
         const message = notice
           ? {
-              text: `Your snack signup for ${escapeSlack(group.name)} on ${receipt.localDate} was cancelled when an administrator marked the class NO_SNACK. Remove any imported calendar event yourself. Use \`/snack mine\` in <#${group.channelId}> to see your current commitments.`,
+              text: `We don't need snack for ${escapeSlack(group.name)} on ${receipt.localDate}.  You're off the hook!  Use \`/snack mine\` in <#${group.channelId}> to see your current commitments.`,
             }
           : await operationMessage(env, group, receipt);
         result = await sendSlack(
@@ -95,7 +94,7 @@ export async function deliverPending(
             channel: notice ? receipt.previousVolunteerId : job.channelId,
             ...(!notice ? { user: receipt.actorUserId } : {}),
             ...message,
-            text: `${message.text}\n\n${privacy}`,
+            text: `${message.text}`,
             unfurl_links: false,
             unfurl_media: false,
           },
