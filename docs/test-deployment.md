@@ -210,8 +210,16 @@ A successful download does not demonstrate import into a real calendar client.
   calendar import and deployed scheduled delivery remain unverified.
 - GitHub automatic deployment is prepared in the workflow, pending environment
   credentials, pushing the change and a successful observed pipeline run.
-- Latest pilot redeployment: `317ab08d-8707-4ac1-a29a-a6cdfe36b26e`.
+- Previous pilot redeployment: `317ab08d-8707-4ac1-a29a-a6cdfe36b26e`.
   Slack CLI confirmed the manifest update and installation. Live checks returned
   health 200 and protected admin 503; signed, read-only `/snack list` and
   `/snack mine` responses confirmed readable dates, the calendar label and
   cancellation-only controls. This redeployment did not change any signups.
+- Latest pilot redeployment: `f8e6fad1-4f83-4398-8069-2afa2a048588`, from
+  commit `726b87e` on `codex/milestone-4-operations`. Slack CLI confirmed the
+  existing app's manifest update and installation, then deployed the normal
+  Worker entry and cron. Public health returned 200; the admin operations endpoint
+  remained protected with 503. No migrations, group configuration or signups were
+  changed. The latest concise message wording and calendar description are
+  deployed; signed command/calendar smoke checks and visual Slack verification
+  were not run during this deployment.

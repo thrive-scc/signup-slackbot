@@ -112,8 +112,13 @@ and DST boundary events. Signed pagination checks prove private reads, navigatio
 in both directions, harmless repeats, early acknowledgment, no database writes,
 and clear read failures without command guidance. One older reminder expectation
 still included the meeting time and was updated to the requested date-only copy.
-This follow-up has not been redeployed or rendered in real Slack yet. The live
-evidence below describes the previous deployed wording.
+This follow-up was deployed through the Slack CLI as pilot Worker version
+`f8e6fad1-4f83-4398-8069-2afa2a048588`, from commit `726b87e`. The existing app's
+manifest update and installation succeeded. Public health returned 200 and the
+admin operations endpoint remained protected with 503. No signups were changed.
+The new wording has not yet been visually verified in Slack or downloaded from
+the live calendar endpoint. The live interaction evidence below describes the
+previous deployed wording.
 
 On 2026-09-30, formatting, lint, types, production build, 23 unit tests,
 98 local Worker/D1 integration tests and eight Chromium tests passed. Updated
