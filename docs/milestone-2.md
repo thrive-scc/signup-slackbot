@@ -1,20 +1,25 @@
 # Milestone 2 — signup lifecycle
 
-## Status and remaining decision
+## Status
 
 Availability, own-signup lists, guided Slack controls, lifecycle transactions,
 NO_SNACK administration, audit records, and durable notifications are implemented.
-Cancellation and date changes are exercised with a class-start cutoff in the
-disposable test entry. **The normal local and deployable entries do not yet enable
-volunteer cancellation/date changes:** the product cutoff decision is still pending.
-This is not a completed release until that policy is selected and the entry points
-are wired to it. The proposed policy closes both operations at the original class's
-start; a move's destination must always be a future class.
+On 2026-09-30 the user accepted the class-start cutoff. The normal local and
+deployable entries now enable volunteer cancellation/date changes until the
+original class starts; a move's destination must always be a future class.
+This completes the M2 local implementation. [Milestone 3](milestone-3.md) adds
+scheduled work and records the current validation evidence.
 
 Production admin authentication and real Slack/calendar-import verification remain
 outstanding. No deployment is performed by the development commands.
 
 ## Behavior
+
+Slack's command listing shows only `/snack`, with the description
+“volunteer to bring snacks.” Volunteer guidance advertises `/snack list` and
+`/snack mine`; signup and cancellation use the guided controls. To choose another
+date, cancel the old signup and use the availability list again.
+The other text commands below remain supported for compatibility and diagnostics.
 
 | Command                                | Result                                                              |
 | -------------------------------------- | ------------------------------------------------------------------- |
@@ -22,8 +27,8 @@ outstanding. No deployment is performed by the development commands.
 | `/snack signup YYYY-MM-DD`             | Existing atomic signup with calendar download                       |
 | `/snack mine`                          | Your current/future commitments for this group, with calendar links |
 | `/snack mine 2`                        | Next page when you have more than eight commitments                 |
-| `/snack cancel YYYY-MM-DD`             | Cancel your own commitment, once the cutoff policy is enabled       |
-| `/snack change YYYY-MM-DD YYYY-MM-DD`  | Atomically move your own commitment, once enabled                   |
+| `/snack cancel YYYY-MM-DD`             | Cancel your own commitment before class starts                      |
+| `/snack change YYYY-MM-DD YYYY-MM-DD`  | Atomically move your own commitment before class starts             |
 
 Eight classes is a display window, not a signup horizon. Dated commands can claim
 any valid future class. Own-signup pages include assignments through their saved
@@ -32,9 +37,9 @@ Listings do not create database rows; a missing occurrence on the configured
 cadence remains implicitly OPEN. Different groups can meet on different weekdays.
 
 With a bot token configured for the group's workspace, availability includes
-**Bring snacks** buttons. The own-signup view includes cancellation buttons and
-date selectors when the cutoff policy is enabled. Controls carry assignment IDs,
-so a stale control cannot remove a replacement commitment. Buttons/selectors still
+**Bring snacks** buttons. The own-signup view includes only cancellation buttons
+before class starts, with no move selector. Controls carry assignment IDs,
+so a stale control cannot remove a replacement commitment. Controls still
 revalidate ownership, cadence, time, and availability on the server. Unsupported
 or ambiguous workspace/channel mappings never select a group implicitly.
 
@@ -49,6 +54,10 @@ Local development uses the explicit identity `development:local-admin`.
 
 Calendar downloads for cancelled/replaced assignments return 404. Imported calendar
 events remain fire-and-forget and require manual deletion or replacement.
+Slack dates use abbreviated American month/day labels, such as `Nov 8`, without
+the year. Signup confirmations include only the start time, such as `9:30 AM`.
+Calendar links say **Add to your calendar**. Stored dates and calendar events
+retain full dates, both times and correct timezone conversion.
 
 ## Persistence and delivery
 
@@ -67,21 +76,27 @@ Activity retains both source/destination dates and prior assignment/volunteer ID
 Slash commands return private HTTP confirmations directly. Slack Block Kit actions
 require a separate message: an empty acknowledgment alone does not display text.
 Accepted interactive mutations atomically enqueue a private confirmation, then
-`waitUntil` starts delivery outside the acknowledgment path. Replies use
-`chat.postEphemeral`; admin cancellation notices use `chat.postMessage` to the
+`waitUntil` starts delivery outside the acknowledgment path. Signup buttons replace
+the original private list with a compact confirmation through Slack's transient
+response URL, so visibility does not require scrolling to a new reply. The URL is
+validated and never persisted. Public messages are never replaced with a private
+calendar link. If the source update is explicitly rejected, delivery falls back
+to `chat.postEphemeral`. Ambiguous failures remain recoverable in the outbox;
+cron retries use the private API reply because the response URL was not stored.
+Other interactive replies use `chat.postEphemeral`; admin cancellation notices use `chat.postMessage` to the
 affected user's app conversation. Transient validation guidance is best effort
 and does not create a durable mutation record. A volunteer can always inspect
 `/snack mine` if a private reply is missing. Slack ephemeral delivery is inherently
 session dependent, so a successful API response does not prove the person saw it.
 
-The same Worker has a once-per-minute cron for **delivery recovery only**. It
-does not generate Thursday reminders or class-start messages. Each pass attempts
+The same Worker has a once-per-minute cron. Originally M2 delivery recovery only,
+it now also generates [M3 scheduled work](milestone-3.md). Each pass attempts
 at most four jobs, using atomic claims, 60-second expiring leases and a five-second
 HTTP timeout. There are at most five attempts, with exponential backoff starting
 at 30 seconds and Slack's `Retry-After` respected. Interactive replies expire after
 30 minutes; cancellation notices after 24 hours. Expired/exhausted work remains
-FAILED for inspection. These are M2 delivery lifetimes, not the still-unresolved
-M3 scheduled catch-up policy. Permanent errors stop retries; missing configuration
+FAILED for inspection. These are M2 delivery lifetimes; M3 reminders expire at
+class start and class-start posts one hour later. Permanent errors stop retries; missing configuration
 retains pending work until expiry. Error categories contain no raw response bodies,
 tokens, response URLs, or exception details.
 
@@ -115,7 +130,7 @@ Choose future sample-group Sundays if the example dates have passed. Open
 An assigned class loses its volunteer; a notification stays pending without bot
 credentials. Existing imported calendar events are not changed.
 
-After the cutoff decision is enabled, the volunteer portion can also be exercised:
+Exercise volunteer changes before the original class starts:
 
 ```sh
 docker exec snack-signup-harness npm run demo:command -- change 2026-09-27 2026-10-04
@@ -133,8 +148,8 @@ FROM deliveries ORDER BY id DESC;
 ```
 
 Wrangler does not fire cron automatically in development. A deliberate local pass
-is `curl http://localhost:8787/__scheduled`. With no bot token this only marks pending
-work as unconfigured; it does not send anything. Failed-delivery management UI and
+is `curl http://localhost:8787/__scheduled`. M3 can enqueue due work; with no bot
+token, pending work is marked unconfigured and nothing is sent. Failed-delivery management UI and
 retention/cleanup remain M4 work.
 
 ## Slack configuration and live evidence
@@ -182,7 +197,7 @@ Keep the development admin bypass off public tunnels. The production entry still
 denies admin assets and APIs; this change does not implement personal-account auth.
 
 In a deliberate real-service smoke test, exercise private command responses,
-buttons/selectors and their confirmations, competing claims, admin cancellation
+buttons and their confirmations, competing claims, admin cancellation
 notices, and calendar import across a DST boundary. Measure Slack's real ACK
 latency and inspect delivery results. Local fake-transport and Chromium checks
 do not establish those real-service outcomes.

@@ -13,6 +13,8 @@ const group: ScheduledGroup = {
   startTime: '09:30',
   endTime: '11:45',
   scheduleStartDate: '2026-01-01',
+  reminderDaysBefore: 3,
+  reminderTime: '15:00',
 };
 
 it('uses the group-local date and skips a class exactly at its start', () => {

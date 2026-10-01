@@ -12,6 +12,7 @@ import { getUpcomingStatus } from './application/get-upcoming-status';
 import { readClasses } from './adapters/d1/classes';
 import { changeClassStatus, type AdminIdentity } from './adapters/admin';
 import { deliverPending } from './delivery';
+import { enqueueScheduled } from './scheduling';
 export function createWorker(
   authorizeAdmin: (request: Request) => AdminIdentity | false,
   clock: Clock = systemClock,
@@ -111,8 +112,12 @@ export function createWorker(
       _controller: ScheduledController,
       env: SnackEnv,
     ): Promise<void> {
-      // Only M2 delivery recovery. Reminder/class-start job generation belongs to M3.
-      await deliverPending(env, clock);
+      // Use the actual clock for catch-up, not a possibly delayed trigger timestamp.
+      try {
+        await enqueueScheduled(env.DB, clock);
+      } finally {
+        await deliverPending(env, clock);
+      }
     },
   } satisfies ExportedHandler<Env>;
 }

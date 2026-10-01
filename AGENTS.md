@@ -6,24 +6,39 @@ Build a small, deterministic Slack snack-signup bot, initially for Thrive,
 using TypeScript, Cloudflare Workers, D1, and a lightweight SvelteKit admin UI.
 Use `/snack` as the slash command. Prefer guided buttons/selectors; do not use an
 LLM or sophisticated natural-language parsing.
+Slack's command listing displays only `/snack`, described as “volunteer to bring
+snacks.” Advertise only `/snack list` and `/snack mine` in volunteer guidance;
+keep direct signup/cancel/change commands functional without advertising them.
+Own-signup lists show cancellation only; do not offer a move selector. Slack
+dates use `Jun 5` without a year. Confirmations show only the start time, and
+calendar links say “Add to your calendar.” Calendar data retains full precision.
 
 Model life groups explicitly so scheduling and wording are not tied to Thrive
 or Sundays. Start with one configured group. Do not build group onboarding,
 billing, or a general multi-tenant platform without an actual requirement.
+Accepted M4 direction: one Cloudflare backend must support multiple Slack
+workspaces, each mapped to one life group. Workspace installation credentials,
+request routing and delivery isolation still need their own validated slice;
+the current pilot supports one bot installation. Do not infer a group's name
+from a Slack workspace or silently seed additional remote groups.
 
 Maintainability, conceptual integrity, small validated increments, and evidence
 beyond agent-written tests take priority over code volume.
 
 ## Repository state and implementation boundary
 
-Milestones 0 and 1 are complete for local validation. Milestone 2 adds availability,
-own-signup views, atomic lifecycle operations, guided Slack controls, NO_SNACK/OPEN
-admin writes and durable delivery with retry/lease handling. Cancellation/date
-changes are tested with a class-start cutoff in disposable tests but are NOT
-enabled in the normal local/deployable entries yet: the product cutoff decision
-is pending. Do not claim M2 complete until that decision is selected and wired.
-See docs/milestone-2.md for current behavior, setup, and evidence limits.
+Milestones 0–3 are implemented for local validation. Milestone 3 adds reminders,
+class-start messages, durable scheduled delivery and catch-up expiry. The user
+accepted the timing policies on 2026-09-30; normal local/deployable entries now
+enable volunteer cancellation/date changes until class start.
+See docs/milestone-2.md and docs/milestone-3.md for behavior, setup and evidence.
 Local verification and real-service evidence must be reported separately.
+An isolated Cloudflare test deployment and Slack app now exist; see
+docs/test-deployment.md for resource IDs, CLI workflow and live verification gaps.
+Use the normal Worker entry and explicit `--env test` for remote test operations.
+The current remote target is the pilot; `test` is its historical Wrangler name.
+GitHub main pushes should deploy it only after verification. Future test and
+production targets must use separate Workers, D1 databases and credentials.
 Inspect current code before every task. README.md is the setup guide;
 docs/architecture.md and docs/acceptance.md describe current implementation and
 the limits of its evidence. The product rules below also cover future milestones.
@@ -39,8 +54,8 @@ and Chromium tests. Build before running integration tests alone on a fresh tree
 Production authentication is not implemented: the normal Worker entry denies
 admin access, while development explicitly selects `worker/local.ts`. Do not
 deploy that local entry or add a production authentication bypass. The scheduled
-handler only recovers pending M2 deliveries; it does not generate reminders or
-class-start messages. The once-per-minute cron is manual in local Wrangler.
+handler generates reminder/class-start jobs and recovers pending deliveries.
+The once-per-minute cron is manual in local Wrangler.
 
 ## Product model and invariants
 
@@ -94,17 +109,16 @@ group's cadence are implicitly OPEN.
   choosing a group. No separate membership lookup is required.
 - Signup closes at the class start instant. Replaying an already-committed
   request after that cutoff returns its original outcome, without a new signup.
-- M2 cancellation/change cutoff remains pending. Test entries explicitly exercise
-  a class-start policy; normal entries must not silently choose it. A change
-  destination must be a future class. Admin status controls compare the displayed
+- Accepted on 2026-09-30: cancellation/change closes at the original class start.
+  A change destination must be a future class. Admin status controls compare the displayed
   state and assignment ID; stale updates must not cancel a newer commitment.
 
 ### Scheduling
 
-- Reminder configuration belongs to the life group. Proposed initial semantics:
-  `days_before = 3` and `local_time = 15:00`, producing Thursday 15:00 for Thrive's
-  Sunday class. Use local calendar-day subtraction, not a fixed UTC duration.
-  This interpretation must be confirmed before implementing scheduled behavior.
+- Accepted on 2026-09-30: reminder configuration belongs to the life group.
+  `reminder_days_before = 3` and `reminder_time = 15:00` produce Thursday 15:00 for
+  Thrive's Sunday class. Use local calendar-day subtraction, not a fixed UTC duration.
+  Reject ambiguous/nonexistent reminder times and reminders at/after class start.
 - Store/compare execution instants in UTC; interpret class dates and configured
   wall-clock times in the group's IANA timezone. Never assume a permanent offset.
 - Remind only the current volunteer for an ASSIGNED class. Recheck assignment
@@ -118,8 +132,13 @@ group's cadence are implicitly OPEN.
   volunteer needed for OPEN (including absent rows), or no snack needed.
 - Preserve the original requirement to post even for an explicit NO_SNACK class;
   avoid implying that a meeting is taking place when it may not be.
-- Cron repetition must not create duplicate logical jobs. Define catch-up expiry
-  before implementing scheduling; do not send indefinitely stale messages.
+- Cron repetition must not create duplicate logical jobs. Accepted catch-up expiry:
+  reminders expire at class start, class-start posts one hour after start; five
+  delivery attempts maximum. Use the injected current clock for discovery, not
+  a delayed cron event timestamp. No backfill beyond those windows.
+- Signups at/after the reminder instant receive the reminder in their confirmation;
+  they do not generate an additional catch-up DM. A new assignment ID invalidates
+  the old reminder even when the volunteer remains the same.
 
 ### Calendar downloads
 
@@ -160,9 +179,16 @@ group's cadence are implicitly OPEN.
 - M2 delivery uses one configured bot installation/workspace, private interactive
   confirmations and historical admin cancellation notices. No response URLs are
   stored. Jobs have 60-second leases, five attempts, 30-minute reply/24-hour notice
-  expiry, sanitized errors and Slack Retry-After handling. These lifetimes do not
-  settle M3 scheduled catch-up expiry. Missing bot credentials retain pending work
+  expiry, sanitized errors and Slack Retry-After handling. Scheduled jobs use the
+  M3 expiry rules above. Missing bot credentials retain pending work
   until expiry; tests inject a fake sender and never contact Slack.
+- Signup-button confirmation may replace the originating private message using
+  a validated response URL held only during the request. Never persist it; the
+  durable fallback remains a private bot reply. Keep delivery outside the ACK.
+- Scheduled jobs share `deliveries` but have no operation receipt. D1 enforces one
+  class-start job per group/date and one reminder per group/assignment. SKIPPED
+  records retain obsolete-work evidence. Retry-After deadlines remain durable
+  after job expiry/cancellation and apply to newly enqueued work in the workspace.
 - Do not add Redis, queues, microservices, or additional databases speculatively.
 
 ## Development environment and harness
@@ -246,11 +272,11 @@ Required acceptance coverage as the relevant features arrive:
 3. Scheduling: group-configured reminder and class-start messages, retries.
 4. Operations: history and delivery UI, deployment/smoke docs, retention/cleanup.
 
-Before affected implementation, resolve: cancellation/date-change cutoff; reminder
-calendar-days/local-time interpretation; schedule-edit behavior for existing
-assignments; DST ambiguous/nonexistent local times for future group schedules;
-and scheduled catch-up expiry. None blocks the basic harness. Do not silently
-invent these policies or build general solutions before they are needed.
+Schedule editing for existing assignments remains deferred: there is no group-edit
+UI/API. Do not mutate schedules behind active assignments or silently move their
+saved instants. Ambiguous/nonexistent local times currently fail visibly. Resolve
+any alternative DST policy before enabling schedules that need it. Do not build
+general schedule-edit/recurrence machinery before it is needed.
 
 Keep future possibilities in the external backlog, with planning buckets separate
 from delivery status. LLM conversation, Google Calendar synchronization, advanced

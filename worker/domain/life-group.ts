@@ -11,6 +11,8 @@ export interface ScheduledGroup extends LifeGroup {
   workspaceId: string;
   channelId: string;
   scheduleStartDate: string;
+  reminderDaysBefore: number;
+  reminderTime: string;
 }
 export interface GroupOverview {
   groups: LifeGroup[];

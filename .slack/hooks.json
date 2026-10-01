@@ -1,0 +1,7 @@
+{
+  "runtime": "node",
+  "hooks": {
+    "get-manifest": "sh scripts/dev.sh run node scripts/slack-manifest.mjs https://snack-signup-bot-test.adam-lindell.workers.dev",
+    "deploy": "sh scripts/cloudflare.sh node scripts/deploy-test.mjs"
+  }
+}

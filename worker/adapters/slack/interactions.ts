@@ -11,7 +11,8 @@ import {
   type VolunteerCutoff,
 } from './commands';
 import { privacy, publicOrigin } from './messages';
-import { sendSlack } from './api';
+import { sendSlack, slackResponseUrl, replaceSlackMessage } from './api';
+import { section } from './messages';
 
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
@@ -89,6 +90,11 @@ export async function handleInteraction(
   const actorUserId = user as string;
   if (workspaceId !== env.SLACK_BOT_WORKSPACE_ID || channelId.startsWith('D'))
     return new Response('Unsupported workspace or channel.', { status: 403 });
+  const responseUrl =
+    action.action_id === 'snack_signup' &&
+    object(payload.container).is_ephemeral === true
+      ? slackResponseUrl(payload.response_url)
+      : null;
   try {
     const groups = await findChannelGroups(env.DB, workspaceId, channelId);
     if (groups.length !== 1 || groups[0]!.id !== groupId)
@@ -118,16 +124,35 @@ export async function handleInteraction(
           typeof assignmentId === 'string' ? assignmentId : undefined,
       },
     );
-    context.waitUntil(deliverPending(env, clock));
+    context.waitUntil(
+      deliverPending(
+        env,
+        clock,
+        undefined,
+        responseUrl ? { groupId, requestId, responseUrl } : undefined,
+      ),
+    );
   } catch (error) {
     // Validation failures have no state change to commit. Give immediate private
     // guidance outside the ACK path; successful mutation replies live in D1.
-    context.waitUntil(
-      sendSlack(env.SLACK_BOT_TOKEN, 'chat.postEphemeral', {
+    const text = `${knownError(error) ? (error as Error).message : uncertainMessage}\n\n${privacy}`;
+    const fallback = () =>
+      sendSlack(env.SLACK_BOT_TOKEN!, 'chat.postEphemeral', {
         channel: channelId,
         user: actorUserId,
-        text: `${knownError(error) ? (error as Error).message : uncertainMessage}\n\n${privacy}`,
-      }).then(() => undefined),
+        text,
+      });
+    context.waitUntil(
+      (async () => {
+        if (responseUrl) {
+          const result = await replaceSlackMessage(responseUrl, {
+            text,
+            blocks: [section(text)],
+          });
+          if (result.ok || result.retryAfter) return;
+        }
+        await fallback();
+      })(),
     );
   }
   return new Response(null, { status: 200 });

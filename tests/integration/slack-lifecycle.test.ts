@@ -9,6 +9,9 @@ import {
 } from '../support/command';
 import { signedInteraction } from '../support/interaction';
 import { FakeSlack } from '../support/slack';
+import { deliverPending } from '../../worker/delivery';
+import { signupForClass } from '../../worker/application/signup-for-class';
+import { signupStore } from '../../worker/adapters/d1/signups';
 
 const clock = fixedClock('2026-10-31T20:00:00Z');
 const worker = createWorker(() => false, clock, 'class-start');
@@ -27,7 +30,7 @@ interface Action {
 }
 interface Message {
   text: string;
-  blocks: { accessory?: Action; elements?: Action[] }[];
+  blocks: { type: string; accessory?: Action; elements?: Action[] }[];
 }
 const command = async (
   text: string,
@@ -56,36 +59,308 @@ const interact = (
     config(),
     { waitUntil: (p) => tasks.push(p) },
   );
+const sourceUrl =
+  'https://hooks.slack.com/actions/T_FIXTURE/reply/fixture-response-token';
+const privateSource = {
+  container: { is_ephemeral: true },
+  response_url: sourceUrl,
+};
+
+it('updates the clicked signup before older pending replies can consume the delivery pass', async () => {
+  for (const date of ['2026-11-08', '2026-11-15', '2026-11-22', '2026-11-29']) {
+    await signupForClass(
+      {
+        groupId: 'thrive-fixture',
+        workspaceId: 'T_FIXTURE',
+        actorUserId: 'U_OTHER',
+        localDate: date,
+        requestId: `older:${date}`,
+        replyChannelId: 'C_FIXTURE',
+      },
+      signupStore(env.DB),
+      clock,
+      () => crypto.randomUUID(),
+    );
+  }
+  const button = (await command('list')).blocks.find(
+    (b) => b.accessory,
+  )!.accessory!;
+  const tasks: Promise<unknown>[] = [];
+  const slack = new FakeSlack();
+  const originalFetch = globalThis.fetch;
+  vi.stubGlobal('fetch', slack.fetch);
+  try {
+    slack.enqueue(new Response('ok'));
+    for (let i = 0; i < 3; i++) slack.enqueue(Response.json({ ok: true }));
+    await interact(
+      { action_id: button.action_id, value: button.value },
+      tasks,
+      privateSource,
+    );
+    await Promise.all(tasks);
+    expect(slack.requests).toHaveLength(4);
+    expect(slack.requests[0]!.url).toBe(sourceUrl);
+    expect(
+      await env.DB.prepare(
+        "SELECT count(*) AS n FROM deliveries WHERE status='PENDING'",
+      ).first('n'),
+    ).toBe(1);
+  } finally {
+    vi.stubGlobal('fetch', originalFetch);
+  }
+});
+
+it('replaces the private signup list with confirmation, without storing its response URL or replying again on retry', async () => {
+  const button = (await command('list')).blocks.find(
+    (b) => b.accessory,
+  )!.accessory!;
+  const action = { action_id: button.action_id, value: button.value };
+  const tasks: Promise<unknown>[] = [];
+  const slack = new FakeSlack();
+  const originalFetch = globalThis.fetch;
+  vi.stubGlobal('fetch', slack.fetch);
+  try {
+    slack.enqueue(new Response('ok'));
+    const ack = await interact(action, tasks, privateSource);
+    expect(ack.status).toBe(200);
+    expect(await ack.text()).toBe('');
+    await Promise.all(tasks);
+    expect(slack.requests).toHaveLength(1);
+    expect(slack.requests[0]!.url).toBe(sourceUrl);
+    const message = JSON.parse(slack.requests[0]!.body);
+    expect(message).toMatchObject({
+      replace_original: true,
+      response_type: 'ephemeral',
+    });
+    expect(message.text).toContain('Nov 1 at 9:30 AM');
+    expect(message.text).toContain('Add to your calendar');
+    expect(message.text).not.toMatch(/11:45|America\/Chicago|2026-11-01/);
+    expect(
+      message.blocks.some((block: Record<string, unknown>) => block.accessory),
+    ).toBe(false);
+    expect(
+      await env.DB.prepare('SELECT status FROM deliveries').first('status'),
+    ).toBe('SENT');
+    await interact(action, tasks, privateSource);
+    await Promise.all(tasks);
+    expect(slack.requests).toHaveLength(1);
+    for (const table of [
+      'classes',
+      'operation_receipts',
+      'activity',
+      'deliveries',
+    ]) {
+      const rows = await env.DB.prepare(`SELECT * FROM ${table}`).all();
+      expect(JSON.stringify(rows)).not.toMatch(
+        /hooks\.slack\.com|fixture-response-token/,
+      );
+    }
+  } finally {
+    vi.stubGlobal('fetch', originalFetch);
+  }
+});
+
+it.each([
+  [new Error('fixture timeout'), 'NETWORK_OR_RESPONSE_ERROR', 30],
+  [
+    new Response('limited', { status: 429, headers: { 'Retry-After': '120' } }),
+    'RATE_LIMITED',
+    120,
+  ],
+] as const)(
+  'keeps a committed signup recoverable when its source update fails (%s)',
+  async (failure, category, delay) => {
+    const button = (await command('list')).blocks.find(
+      (b) => b.accessory,
+    )!.accessory!;
+    const tasks: Promise<unknown>[] = [];
+    const slack = new FakeSlack();
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', slack.fetch);
+    try {
+      slack.enqueue(failure);
+      await interact(
+        { action_id: button.action_id, value: button.value },
+        tasks,
+        privateSource,
+      );
+      await Promise.all(tasks);
+      expect(
+        await env.DB.prepare('SELECT status FROM classes').first('status'),
+      ).toBe('ASSIGNED');
+      expect(
+        await env.DB.prepare(
+          'SELECT status, last_error FROM deliveries',
+        ).first(),
+      ).toMatchObject({ status: 'PENDING', last_error: category });
+      await deliverPending(
+        config(),
+        fixedClock('2026-10-31T20:00:01Z'),
+        slack.fetch,
+      );
+      expect(slack.requests).toHaveLength(1);
+      slack.enqueue(Response.json({ ok: true }));
+      await deliverPending(
+        config(),
+        fixedClock(
+          new Date(
+            Date.parse('2026-10-31T20:00:00Z') + delay * 1000,
+          ).toISOString(),
+        ),
+        slack.fetch,
+      );
+      expect(slack.requests).toHaveLength(2);
+      expect(slack.requests[1]!.url).toBe(
+        'https://slack.com/api/chat.postEphemeral',
+      );
+      expect(
+        await env.DB.prepare('SELECT status FROM deliveries').first('status'),
+      ).toBe('SENT');
+    } finally {
+      vi.stubGlobal('fetch', originalFetch);
+    }
+  },
+);
+
+it('falls back to a private reply when Slack explicitly rejects a source update', async () => {
+  const button = (await command('list')).blocks.find(
+    (b) => b.accessory,
+  )!.accessory!;
+  const tasks: Promise<unknown>[] = [];
+  const slack = new FakeSlack();
+  const originalFetch = globalThis.fetch;
+  vi.stubGlobal('fetch', slack.fetch);
+  try {
+    slack.enqueue(new Response('expired', { status: 400 }));
+    slack.enqueue(Response.json({ ok: true }));
+    await interact(
+      { action_id: button.action_id, value: button.value },
+      tasks,
+      privateSource,
+    );
+    await Promise.all(tasks);
+    expect(slack.requests.map((r) => r.url)).toEqual([
+      sourceUrl,
+      'https://slack.com/api/chat.postEphemeral',
+    ]);
+    expect(
+      await env.DB.prepare('SELECT status FROM deliveries').first('status'),
+    ).toBe('SENT');
+  } finally {
+    vi.stubGlobal('fetch', originalFetch);
+  }
+});
+
+it.each([
+  { container: { is_ephemeral: false }, response_url: sourceUrl },
+  {
+    container: { is_ephemeral: true },
+    response_url: 'https://example.invalid/actions/T/reply/token',
+  },
+  {
+    container: { is_ephemeral: true },
+    response_url:
+      'https://hooks.slack.com.example.invalid/actions/T/reply/token',
+  },
+  {
+    container: { is_ephemeral: true },
+    response_url: sourceUrl + '?token=extra',
+  },
+])(
+  'does not replace a public message or send credentials to an unsupported response URL (%j)',
+  async (overrides) => {
+    const button = (await command('list')).blocks.find(
+      (b) => b.accessory,
+    )!.accessory!;
+    const tasks: Promise<unknown>[] = [];
+    const slack = new FakeSlack();
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', slack.fetch);
+    try {
+      slack.enqueue(Response.json({ ok: true }));
+      await interact(
+        { action_id: button.action_id, value: button.value },
+        tasks,
+        overrides,
+      );
+      await Promise.all(tasks);
+      expect(slack.requests).toHaveLength(1);
+      expect(slack.requests[0]!.url).toBe(
+        'https://slack.com/api/chat.postEphemeral',
+      );
+    } finally {
+      vi.stubGlobal('fetch', originalFetch);
+    }
+  },
+);
+
+it('shows an invalid signup in the original private message without creating an assignment', async () => {
+  const tasks: Promise<unknown>[] = [];
+  const slack = new FakeSlack();
+  const originalFetch = globalThis.fetch;
+  vi.stubGlobal('fetch', slack.fetch);
+  try {
+    slack.enqueue(new Response('ok'));
+    await interact(
+      {
+        action_id: 'snack_signup',
+        value: JSON.stringify({
+          groupId: 'thrive-fixture',
+          localDate: '2026-10-25',
+        }),
+      },
+      tasks,
+      privateSource,
+    );
+    await Promise.all(tasks);
+    expect(slack.requests[0]!.url).toBe(sourceUrl);
+    expect(JSON.parse(slack.requests[0]!.body).replace_original).toBe(true);
+    expect(
+      await env.DB.prepare('SELECT count(*) AS n FROM classes').first('n'),
+    ).toBe(0);
+    expect(
+      await env.DB.prepare('SELECT count(*) AS n FROM deliveries').first('n'),
+    ).toBe(0);
+  } finally {
+    vi.stubGlobal('fetch', originalFetch);
+  }
+});
 
 it('slash commands list effective availability, only your assignments, atomically move, cancel, and replay a cancellation', async () => {
-  expect((await command('list')).text).toContain(
-    '2026-11-01 — Volunteer needed',
-  );
+  expect((await command('list')).text).toContain('Nov 1 — Volunteer needed');
   await command('signup 2026-11-01');
   await command('signup 2026-11-08', 'U_OTHER');
   const mine = await command('mine');
-  expect(mine.text).toContain('2026-11-01 —');
-  expect(mine.text).not.toContain('2026-11-08 —');
+  expect(mine.text).toContain('Nov 1 —');
+  expect(mine.text).not.toContain('Nov 8 —');
+  expect(mine.text).toContain('Add to your calendar');
+  expect(
+    mine.blocks
+      .filter((b) => b.type === 'actions')
+      .flatMap((b) => b.elements ?? [])
+      .map((a) => a.action_id),
+  ).toEqual(['snack_cancel']);
   expect((await command('cancel 2026-11-01', 'U_OTHER')).text).toContain(
     'only cancel or change your own',
   );
   expect((await command('change 2026-11-01 2026-11-08')).text).toContain(
-    'existing signups are unchanged',
+    'already volunteered',
   );
+  expect((await command('mine')).text).toContain('Nov 1 —');
   expect((await command('change 2026-11-01 2026-11-15')).text).toContain(
-    'Your signup was moved',
+    'Change complete',
   );
-  expect((await command('mine')).text).toContain('2026-11-15 —');
+  expect((await command('mine')).text).toContain('Nov 15 —');
   const cancel = await command('cancel 2026-11-15', 'U_FIXTURE', 'cancel-once');
   expect(cancel.text).toContain('was cancelled');
   expect(
     await command('cancel 2026-11-15', 'U_FIXTURE', 'cancel-once'),
   ).toEqual(cancel);
   expect((await command('mine')).text).toContain('No signups on this page');
-  expect((await command('mine', 'U_OTHER')).text).toContain('2026-11-08 —');
+  expect((await command('mine', 'U_OTHER')).text).toContain('Nov 8 —');
 });
 
-it('guided signup, move, and cancellation use signed actions and one durable private confirmation per exact retry', async () => {
+it('guided signup and cancellation retain retry protection and reject controls made stale by a date change', async () => {
   const slack = new FakeSlack();
   const originalFetch = globalThis.fetch;
   vi.stubGlobal('fetch', slack.fetch);
@@ -102,26 +377,17 @@ it('guided signup, move, and cancellation use signed actions and one durable pri
     expect((await interact(signupAction, tasks)).status).toBe(200);
     await Promise.all(tasks);
     expect(slack.requests).toHaveLength(1);
-    expect(slack.requests[0]?.body).toContain('Download your calendar event');
+    expect(slack.requests[0]?.body).toContain('Add to your calendar');
     const mine = await command('mine');
-    const elements = mine.blocks.flatMap((b) => b.elements ?? []);
-    const move = elements.find((e) => e.action_id === 'snack_change')!;
+    const elements = mine.blocks
+      .filter((b) => b.type === 'actions')
+      .flatMap((b) => b.elements ?? []);
     const oldCancel = elements.find((e) => e.action_id === 'snack_cancel')!;
-    slack.enqueue(Response.json({ ok: true }));
-    expect(
-      (
-        await interact(
-          {
-            action_id: move.action_id,
-            selected_option: move.options![0],
-            action_ts: '1793476800.002',
-          },
-          tasks,
-        )
-      ).status,
-    ).toBe(200);
-    await Promise.all(tasks);
-    expect((await command('mine')).text).toContain('2026-11-08 —');
+    expect(elements.map((a) => a.action_id)).toEqual(['snack_cancel']);
+    expect((await command('change 2026-11-01 2026-11-08')).text).toContain(
+      'Change complete',
+    );
+    expect((await command('mine')).text).toContain('Nov 8 —');
     // A stale cancellation of the original commitment must not cancel the move.
     slack.enqueue(Response.json({ ok: true }));
     await interact(
@@ -133,7 +399,7 @@ it('guided signup, move, and cancellation use signed actions and one durable pri
       tasks,
     );
     await Promise.all(tasks);
-    expect((await command('mine')).text).toContain('2026-11-08 —');
+    expect((await command('mine')).text).toContain('Nov 8 —');
     const current = (await command('mine')).blocks
       .flatMap((b) => b.elements ?? [])
       .find((e) => e.action_id === 'snack_cancel')!;
@@ -150,13 +416,13 @@ it('guided signup, move, and cancellation use signed actions and one durable pri
     expect((await command('mine')).text).toContain('No signups');
     expect(
       await env.DB.prepare('SELECT count(*) AS n FROM deliveries').first('n'),
-    ).toBe(4);
+    ).toBe(3);
   } finally {
     vi.stubGlobal('fetch', originalFetch);
   }
 });
 
-it('acknowledges interactions without waiting for a slow outbound Slack API', async () => {
+it('acknowledges interactions without waiting for a slow source-message update', async () => {
   const button = (await command('list')).blocks.find(
     (b) => b.accessory,
   )!.accessory!;
@@ -169,13 +435,14 @@ it('acknowledges interactions without waiting for a slow outbound Slack API', as
     const ack = await interact(
       { action_id: button.action_id, value: button.value },
       tasks,
+      privateSource,
     );
     expect(ack.status).toBe(200);
     expect(
       await env.DB.prepare('SELECT status FROM classes').first('status'),
     ).toBe('ASSIGNED');
   } finally {
-    release(Response.json({ ok: true }));
+    release(new Response('ok'));
     await Promise.all(tasks);
     vi.stubGlobal('fetch', originalFetch);
   }
@@ -243,5 +510,5 @@ it('paginates own commitments without imposing a signup horizon', async () => {
   ])
     await command(`signup ${date}`);
   expect((await command('mine')).text).toContain('/snack mine 2');
-  expect((await command('mine 2')).text).toContain('2027-01-03 —');
+  expect((await command('mine 2')).text).toContain('Jan 3 —');
 });

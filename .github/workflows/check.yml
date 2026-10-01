@@ -13,3 +13,28 @@ jobs:
       - run: sh scripts/dev.sh build
       - run: sh scripts/dev.sh run npm ci
       - run: sh scripts/dev.sh run npm run verify
+  deploy-pilot:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: pilot
+      url: https://snack-signup-bot-test.adam-lindell.workers.dev
+    concurrency:
+      group: deploy-pilot
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: sh scripts/dev.sh build
+      - run: sh scripts/dev.sh run npm ci
+      - name: Migrate and deploy the verified pilot revision
+        run: |
+          docker run --rm --init \
+            --env CLOUDFLARE_API_TOKEN --env CLOUDFLARE_ACCOUNT_ID \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace" \
+            --mount type=volume,source=snack-harness-modules,target=/workspace/node_modules \
+            snack-signup-harness:dev sh scripts/deploy-pilot.sh

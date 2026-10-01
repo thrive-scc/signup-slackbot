@@ -19,4 +19,20 @@
       "migrations_dir": "migrations",
     },
   ],
+  "env": {
+    "test": {
+      "name": "snack-signup-bot-test",
+      "workers_dev": true,
+      "preview_urls": false,
+      "triggers": { "crons": ["* * * * *"] },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "snack-signup-test",
+          "database_id": "cf436dc5-1d38-4f8a-9968-8c0461bbed8c",
+          "migrations_dir": "migrations",
+        },
+      ],
+    },
+  },
 }

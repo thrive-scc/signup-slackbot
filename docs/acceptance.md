@@ -1,7 +1,8 @@
 # Milestone 0 acceptance and evidence
 
-Current lifecycle behavior, remaining cutoff decision, reproduction steps and limits
-are in [Milestone 2](milestone-2.md); the first slice is in [Milestone 1](milestone-1.md).
+Current scheduling and lifecycle behavior, reproduction steps and evidence limits
+are in [Milestone 3](milestone-3.md) and [Milestone 2](milestone-2.md); the first
+slice is in [Milestone 1](milestone-1.md).
 The harness evidence below is preserved as the Milestone 0 baseline.
 
 ## Automated acceptance

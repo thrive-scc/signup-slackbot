@@ -7,6 +7,7 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: './wrangler.jsonc' },
       miniflare: {
+        d1Databases: ['UPGRADE_DB'],
         bindings: {
           SLACK_SIGNING_SECRET: '',
           CALENDAR_SIGNING_KEY: '',

@@ -20,9 +20,7 @@ test('signed signup produces a downloadable calendar and appears in the built ad
   expect(signup.status()).toBe(200);
   const confirmation = await signup.json();
   expect(confirmation.response_type).toBe('ephemeral');
-  expect(confirmation.text).toContain(
-    '2026-11-01, 9:30 AM–11:45 AM America/Chicago',
-  );
+  expect(confirmation.text).toContain('Nov 1 at 9:30 AM');
   const link = /<(http:\/\/127.0.0.1:8788\/calendar\/[^|]+)\|/.exec(
     confirmation.text,
   )?.[1];

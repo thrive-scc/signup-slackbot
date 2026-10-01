@@ -7,3 +7,6 @@ test-results
 playwright-report
 worker-configuration.d.ts
 package-lock.json
+.slack/apps.json
+.slack/config.json
+.slack/cache

@@ -13,8 +13,7 @@
       {
         "command": "/snack",
         "url": "https://replace-before-install.example/slack/commands",
-        "description": "Volunteer to bring snacks for a class",
-        "usage_hint": "list | mine | signup YYYY-MM-DD | cancel YYYY-MM-DD | change FROM TO",
+        "description": "volunteer to bring snacks",
         "should_escape": true
       }
     ]

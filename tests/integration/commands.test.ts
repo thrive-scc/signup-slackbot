@@ -40,10 +40,10 @@ it('signed command → D1 → private confirmation → independently parsed cale
     text: string;
   }>();
   expect(confirmation.response_type).toBe('ephemeral');
-  expect(confirmation.text).toContain(
-    '2026-11-01, 9:30 AM–11:45 AM America/Chicago',
-  );
-  expect(confirmation.text).toContain('Please plan to bring snacks');
+  expect(confirmation.text).toContain('Nov 1 at 9:30 AM');
+  expect(confirmation.text).not.toMatch(/11:45|America\/Chicago|2026-11-01/);
+  expect(confirmation.text).toContain('Add to your calendar');
+  expect(confirmation.text).toContain('signed up to bring snacks');
   expect(confirmation.text).toContain('visible to group administrators');
   const link = /<(https:\/\/snacks.invalid\/calendar\/[^|]+)\|/.exec(
     confirmation.text,
@@ -145,9 +145,9 @@ it.each([
   [{ text: 'signup 2027-02-30' }, 'valid date'],
   [{ text: 'signup 2025-12-28' }, 'weekly schedule'],
   [{ text: 'signup 2026-10-25' }, 'Signup closes'],
-  [{ text: 'help' }, '/snack signup YYYY-MM-DD'],
-  [{ text: '' }, '/snack signup YYYY-MM-DD'],
-  [{ text: 'signup next Sunday' }, '/snack signup YYYY-MM-DD'],
+  [{ text: 'help' }, '/snack list'],
+  [{ text: '' }, '/snack list'],
+  [{ text: 'signup next Sunday' }, '/snack list'],
 ])(
   'rejects unsupported context/date or supplies guidance: %j',
   async (overrides, message) => {
@@ -161,7 +161,8 @@ it.each([
 
 it('rejects ambiguous channel mappings without selecting a group', async () => {
   await env.DB.prepare(
-    `INSERT INTO life_groups SELECT 'ambiguous', name, slack_workspace_id, slack_channel_id, timezone, weekday, start_time, end_time, schedule_start_date FROM life_groups`,
+    `INSERT INTO life_groups (id, name, slack_workspace_id, slack_channel_id, timezone, weekday, start_time, end_time, schedule_start_date)
+      SELECT 'ambiguous', name, slack_workspace_id, slack_channel_id, timezone, weekday, start_time, end_time, schedule_start_date FROM life_groups`,
   ).run();
   expect((await (await command()).json<{ text: string }>()).text).toContain(
     'More than one life group',

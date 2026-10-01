@@ -4,7 +4,11 @@ import type { OperationReceipt } from '../../domain/lifecycle';
 import type { SignupReceipt } from '../../domain/signup';
 import { calendarLink } from '../calendar-download';
 import { readAssignment } from '../d1/signups';
+import { reminderTime } from '../../domain/scheduling';
+import { dateLabel, startTimeLabel } from './date-labels';
 
+export const privacy =
+  'Direct interactions with this bot may be visible to group administrators.';
 export const escapeSlack = (text: string) =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 export const section = (text: string) => ({
@@ -14,6 +18,28 @@ export const section = (text: string) => ({
 export interface SlackMessage {
   text: string;
   blocks?: unknown[];
+}
+
+export function privateReply(message: SlackMessage) {
+  return Response.json(
+    {
+      response_type: 'ephemeral',
+      ...message,
+      text: `${message.text}\n\n${privacy}`,
+      ...(message.blocks
+        ? {
+            blocks: [
+              ...message.blocks,
+              {
+                type: 'context',
+                elements: [{ type: 'mrkdwn', text: privacy }],
+              },
+            ],
+          }
+        : {}),
+    },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }
 
 export function publicOrigin(value: string | undefined) {
@@ -47,19 +73,17 @@ export async function operationMessage(
   const calendarNote =
     'Manage signup changes through the Slack bot; already-imported calendar events will not update automatically.';
   const messages: Partial<Record<OperationReceipt['outcome'], string>> = {
-    NO_SNACK:
-      'Snack is not needed for that class.',
-    TAKEN:
-      'Someone has already volunteered for that class.',
+    NO_SNACK: 'Snack is not needed for that class.',
+    TAKEN: 'Someone has already volunteered for that class.',
     NOT_OWNER:
       'You do not have a signup for that class. You can only cancel or change your own signup. Use `/snack mine` to check.',
     STALE:
       'That class has changed since these controls were displayed. Refresh the list before trying again.',
     CLOSED:
-      'This class already happened.',
-    CANCELLED: `Your snack signup for ${receipt.localDate} was cancelled. ${calendarNote}`,
-    MARKED_NO_SNACK: `Snack is not needed on ${receipt.localDate}.`,
-    OPENED: `Snack volunteering is open for ${receipt.localDate}.`,
+      'Class has started, so signup changes are closed. Please contact a group administrator.',
+    CANCELLED: `Your snack signup for ${dateLabel(receipt.localDate)} was cancelled. ${calendarNote}`,
+    MARKED_NO_SNACK: `Snack is not needed on ${dateLabel(receipt.localDate)}.`,
+    OPENED: `Snack volunteering is open for ${dateLabel(receipt.localDate)}.`,
     UNCHANGED: 'The class already has that status.',
   };
   if (messages[receipt.outcome]) return { text: messages[receipt.outcome]! };
@@ -73,12 +97,6 @@ export async function operationMessage(
   const origin = publicOrigin(env.PUBLIC_ORIGIN);
   if (!origin || !env.CALENDAR_SIGNING_KEY)
     throw new Error('Calendar configuration unavailable');
-  const time = (instant: string) =>
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: group.timezone,
-      hour: 'numeric',
-      minute: '2-digit',
-    }).format(new Date(instant));
   const link = await calendarLink(
     origin,
     env.CALENDAR_SIGNING_KEY,
@@ -90,7 +108,11 @@ export async function operationMessage(
       : receipt.outcome === 'CHANGED'
         ? 'Change complete; you’re signed up'
         : 'You’re signed up';
+  const lateReminder =
+    assignment.assignedAt >= reminderTime(group, assignment.localDate)
+      ? '\nThe usual reminder time has passed. Please remember to bring snacks for this upcoming class!'
+      : '';
   return {
-    text: `${opening} to bring snacks for ${escapeSlack(group.name)} on ${assignment.localDate}, ${time(assignment.startsAt)}–${time(assignment.endsAt)} ${escapeSlack(group.timezone)}!\n\n<${link}|Download your calendar event (.ics)>\n${calendarNote}\nUse \`/snack mine\` to cancel or change a signup.`,
+    text: `${opening} to bring snacks for ${escapeSlack(group.name)} on ${dateLabel(assignment.localDate)} at ${startTimeLabel(assignment.startsAt, group.timezone)}!${lateReminder}\n\n<${link}|Add to your calendar>\n${calendarNote}\nUse \`/snack mine\` to manage your signups.`,
   };
 }

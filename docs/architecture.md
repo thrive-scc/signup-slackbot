@@ -1,7 +1,7 @@
 # Milestone 0 architecture
 
 This describes the completed harness baseline. Current additions and remaining
-work are documented in [Milestone 2](milestone-2.md) and [Milestone 1](milestone-1.md); statements below about
+work are documented in [Milestone 3](milestone-3.md), [Milestone 2](milestone-2.md) and [Milestone 1](milestone-1.md); statements below about
 features not yet implemented refer to that earlier baseline.
 
 One root package, one Worker deployment shape, one D1 binding. SvelteKit produces

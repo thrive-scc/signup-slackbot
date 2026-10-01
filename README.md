@@ -2,12 +2,16 @@
 
 A deterministic Slack snack coordinator, initially for Thrive. Signup, availability,
 own-signup lists, calendar downloads and NO_SNACK administration use one Worker/D1
-database. Milestone 2's cancellation/date-change transactions and guided controls
-are implemented and tested with a class-start cutoff in the test entry; enabling
-those volunteer operations in normal use awaits the cutoff decision.
-See [Milestone 2](docs/milestone-2.md) for current behavior and validation.
-Real Slack, calendar import and production authentication remain unverified;
-scheduled reminders belong to M3. Product rules live in [AGENTS.md](AGENTS.md).
+database. Volunteers can cancel or change their signups until class starts.
+Milestone 3 adds reminder DMs and class-start channel posts, with DST-aware group
+times and bounded retries. See [Milestone 3](docs/milestone-3.md) for the timing
+rules and local demonstration, and [Milestone 2](docs/milestone-2.md) for lifecycle
+behavior. Initial Slack signup/list interactions have been exercised in the pilot;
+calendar import, deployed cron and production authentication remain unverified.
+Milestone 4 adds Slack usability and deployment work; see
+[current scope](docs/milestone-4.md). The isolated Cloudflare pilot is deployed; see
+[test deployment setup and evidence](docs/test-deployment.md).
+Product rules live in [AGENTS.md](AGENTS.md).
 
 ## Quick start
 
@@ -124,8 +128,9 @@ clean up this project. The image can be removed separately with
 
 The admin preview needs no secrets. `wrangler.jsonc` holds nonsecret binding declarations
 and a deliberately invalid remote database ID; every database command specifies
-`--local`. A once-per-minute cron recovers pending M2 deliveries; there is no
-reminder generation or deployment command. Local cron dispatch is manual.
+`--local`. A once-per-minute cron discovers due reminders/class-start posts and
+recovers pending deliveries. Local cron dispatch is manual; no development
+command deploys the app.
 
 `.env.example` describes the UI boundary. `.dev.vars.example` documents
 Worker configuration; real values go in ignored `.dev.vars` locally and
@@ -136,7 +141,7 @@ Signup requires `SLACK_SIGNING_SECRET`, `CALENDAR_SIGNING_KEY`, and `PUBLIC_ORIG
 The public origin is explicit (never inferred from incoming request headers):
 HTTPS for real use, or HTTP loopback for local development. Missing/invalid
 configuration returns 503 before any signup. Slash commands need no bot token.
-Guided controls and admin cancellation notifications additionally require
+Guided controls, admin cancellation notices and scheduled messages additionally require
 `SLACK_BOT_TOKEN` and `SLACK_BOT_WORKSPACE_ID`; invite the bot to its group channel.
 Missing credentials leave durable notification work pending until its expiry.
 See [the local signup demonstration](docs/milestone-1.md#reproduce-the-local-path)
@@ -146,16 +151,19 @@ Tests explicitly inject synthetic keys and use disposable storage.
 `worker/local.ts` is an explicit local-only entry point with admin access enabled.
 The deployable `worker/index.ts` denies the UI, assets, and admin API with 503 until
 authentication is implemented. There is no environment flag or Host-header
-shortcut that enables admin access in that entry. Production authentication and
-deployment remain future work.
+shortcut that enables admin access in that entry. Production authentication remains
+future work. The [test deployment](docs/test-deployment.md) uses this protected
+entry and separate remote D1; its admin UI is consequently unavailable.
 
 ## More context
 
-- [Milestone 2 behavior, remaining decision and demonstration](docs/milestone-2.md)
+- [Cloudflare/Slack test deployment](docs/test-deployment.md)
+- [Milestone 3 scheduling, timing policies and demonstration](docs/milestone-3.md)
+- [Milestone 2 behavior and demonstration](docs/milestone-2.md)
 - [Milestone 1 behavior and demonstration](docs/milestone-1.md)
 - [Architecture and scope](docs/architecture.md)
 - [Acceptance evidence and manual validation](docs/acceptance.md)
 
-If downloads time out in this environment, the image uses the official Node
-public ECR mirror and Node prefers IPv4 DNS results. These settings avoid the
-Docker Hub/IPv6 connection problems observed during initial setup.
+The development image pulls the pinned official Node image from Docker Hub.
+Node prefers IPv4 DNS results to avoid the Docker Hub/IPv6 connection problems
+observed during initial setup.

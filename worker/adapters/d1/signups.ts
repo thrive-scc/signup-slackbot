@@ -8,7 +8,8 @@ import { interactionDelivery } from './lifecycle';
 
 export const groupColumns = `id, name, timezone, weekday, start_time AS startTime,
   end_time AS endTime, slack_workspace_id AS workspaceId,
-  slack_channel_id AS channelId, schedule_start_date AS scheduleStartDate`;
+  slack_channel_id AS channelId, schedule_start_date AS scheduleStartDate,
+  reminder_days_before AS reminderDaysBefore, reminder_time AS reminderTime`;
 const receiptColumns = `operation, outcome, assignment_id AS assignmentId,
   actor_user_id AS actorUserId, local_date AS localDate`;
 export const assignmentColumns = `c.life_group_id AS groupId, g.name AS groupName,

@@ -2,6 +2,7 @@ import type { Clock } from '../domain/clock';
 import type { ScheduledGroup } from '../domain/life-group';
 import type { ClaimClass, SignupReceipt } from '../domain/signup';
 import { classTimes } from '../domain/class-time';
+import { reminderTime } from '../domain/scheduling';
 
 export interface SignupStore {
   getGroup(id: string): Promise<ScheduledGroup | null>;
@@ -47,6 +48,7 @@ export async function signupForClass(
     return { group, receipt: previous };
   }
   const times = classTimes(group, input.localDate);
+  reminderTime(group, input.localDate);
   const now = clock.now();
   if (now.getTime() >= Date.parse(times.startsAt)) {
     throw new SignupError(

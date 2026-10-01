@@ -63,7 +63,7 @@ it('competing and repeated delivery passes send one committed cancellation notic
   expect(slack.requests[0]?.url).toBe('https://slack.com/api/chat.postMessage');
   expect(JSON.parse(slack.requests[0]!.body)).toMatchObject({
     channel: 'U_FIXTURE',
-    text: expect.stringContaining('was cancelled'),
+    text: expect.stringContaining("You're off the hook!"),
   });
   expect((await jobs()).results).toEqual([
     { status: 'SENT', attempts: 1, last_error: null },
@@ -84,7 +84,7 @@ it('interactive signup confirmation is private and includes the calendar link', 
   expect(JSON.parse(slack.requests[0]!.body)).toMatchObject({
     channel: 'C_FIXTURE',
     user: 'U_FIXTURE',
-    text: expect.stringContaining('Download your calendar event'),
+    text: expect.stringContaining('Add to your calendar'),
   });
   expect((await jobs()).results[0]?.status).toBe('SENT');
 });

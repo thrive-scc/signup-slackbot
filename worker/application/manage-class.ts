@@ -7,6 +7,7 @@ import type {
   VolunteerCutoff,
 } from '../domain/lifecycle';
 import { classTimes } from '../domain/class-time';
+import { reminderTime } from '../domain/scheduling';
 import { SignupError } from './signup-for-class';
 
 interface LifecycleStore {
@@ -67,6 +68,7 @@ export async function manageClass(
         'Choose a different class date. Your original signup is unchanged.',
       );
     times = classTimes(group, input.targetDate);
+    reminderTime(group, input.targetDate);
     if (Date.parse(times.startsAt) <= now.getTime())
       throw new SignupError(
         'Choose a future destination class. Your original signup is unchanged.',

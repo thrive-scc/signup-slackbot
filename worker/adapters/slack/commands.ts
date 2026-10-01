@@ -17,6 +17,7 @@ import { readClasses, readOwnAssignments } from '../d1/classes';
 import { calendarLink } from '../calendar-download';
 import { digest } from '../signatures';
 import { readSlackRequest, slackId } from './read-request';
+import { dateLabel } from './date-labels';
 import {
   escapeSlack,
   operationMessage,
@@ -39,13 +40,11 @@ const actionValue = (
   group: ScheduledGroup,
   date: string,
   assignmentId?: string,
-  targetDate?: string,
 ) =>
   JSON.stringify({
     groupId: group.id,
     localDate: date,
     assignmentId,
-    targetDate,
   });
 
 export async function commandMessage(
@@ -58,7 +57,7 @@ export async function commandMessage(
   cutoff: VolunteerCutoff | undefined,
   interaction?: { channelId: string; assignmentId?: string },
 ): Promise<SlackMessage> {
-  const guide = `Use \`/snack list\` for the next eight classes, \`/snack mine\` for your signups, or \`/snack signup YYYY-MM-DD\`.\nCancel: \`/snack cancel YYYY-MM-DD\`. Move: \`/snack change YYYY-MM-DD YYYY-MM-DD\`.\nClasses meet ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][group.weekday]}, ${group.startTime}–${group.endTime} ${escapeSlack(group.timezone)}. Signup closes at class start.`;
+  const guide = `Use \`/snack list\` to find a date and volunteer, or \`/snack mine\` to view and manage your signups.\nClasses meet ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][group.weekday]}, ${group.startTime}–${group.endTime} ${escapeSlack(group.timezone)}. Signup closes at class start.`;
   const buttonsEnabled =
     !!env.SLACK_BOT_TOKEN && env.SLACK_BOT_WORKSPACE_ID === group.workspaceId;
   if (text === '' || text === 'list' || text === 'help') {
@@ -69,7 +68,7 @@ export async function commandMessage(
     );
     const descriptions = classes.map(
       (c) =>
-        `${c.localDate} — ${c.status === 'OPEN' ? 'Volunteer needed' : c.status === 'NO_SNACK' ? 'No snack needed' : `<@${c.volunteerUserId}> is signed up`}`,
+        `${dateLabel(c.localDate)} — ${c.status === 'OPEN' ? 'Volunteer needed' : c.status === 'NO_SNACK' ? 'No snack needed' : `<@${c.volunteerUserId}> is signed up`}`,
     );
     return {
       text: `${escapeSlack(group.name)}\n${descriptions.join('\n')}\n\n${guide}`,
@@ -102,11 +101,6 @@ export async function commandMessage(
     );
     const page = Number(mine[1] ?? 1);
     const selected = assignments.slice((page - 1) * 8, page * 8);
-    const available = await getUpcomingStatus(
-      group,
-      (g, a, b) => readClasses(env.DB, g, a, b),
-      clock,
-    );
     const blocks: unknown[] = [
       section(`*Your snack signups for ${escapeSlack(group.name)}*`),
     ];
@@ -117,7 +111,7 @@ export async function commandMessage(
         env.CALENDAR_SIGNING_KEY!,
         a.assignmentId,
       );
-      const description = `${a.localDate} — <${link}|Calendar (.ics)>`;
+      const description = `${dateLabel(a.localDate)} — <${link}|Add to your calendar>`;
       lines.push(description);
       blocks.push(section(description));
       if (
@@ -134,33 +128,14 @@ export async function commandMessage(
             value: actionValue(group, a.localDate, a.assignmentId),
             confirm: {
               title: plain('Cancel your signup?'),
-              text: plain(`Release your snack commitment for ${a.localDate}?`),
+              text: plain(
+                `Release your snack commitment for ${dateLabel(a.localDate)}?`,
+              ),
               confirm: plain('Cancel signup'),
               deny: plain('Keep signup'),
             },
           },
         ];
-        const options = available
-          .filter((c) => c.status === 'OPEN' && c.localDate !== a.localDate)
-          .map((c) => ({
-            text: plain(c.localDate),
-            value: actionValue(group, a.localDate, a.assignmentId, c.localDate),
-          }));
-        if (options.length)
-          elements.push({
-            type: 'static_select',
-            action_id: 'snack_change',
-            placeholder: plain('Move to another date'),
-            options,
-            confirm: {
-              title: plain('Move your signup?'),
-              text: plain(
-                'Your original date is released only if the selected date is still open.',
-              ),
-              confirm: plain('Move signup'),
-              deny: plain('Keep signup'),
-            },
-          });
         blocks.push({ type: 'actions', elements });
       }
     }
