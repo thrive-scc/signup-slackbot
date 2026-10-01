@@ -170,7 +170,7 @@ Use only this test workspace/channel. The workflow sends actual Slack messages
 and stores test activity; it is not part of offline automated verification.
 
 1. Check `/health` returns 200 and unauthenticated admin access returns 503.
-2. Run `/snack list` in `#general`; upcoming weekly dates should be OPEN.
+2. Run `/snack` in `#general`; upcoming weekly dates should be OPEN.
 3. Sign up through a button for a future date; verify confirmation, `/snack mine`,
    and exactly one D1 assignment. Download the calendar and inspect its event.
 4. Cancel only the test signup made for this check, then sign up for another date

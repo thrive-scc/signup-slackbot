@@ -44,8 +44,9 @@ it.each([
     expect(event.endDate.toJSDate().toISOString()).toBe(end);
     expect(event.summary).toBe('Bring snacks for Thrive');
     expect(event.uid).toBe('fixed-assignment@snack-signup');
-    expect(event.description).toContain('Slack bot');
-    expect(event.description).toContain('will not update automatically');
+    expect(event.description).toBe(
+      "Reminder to bring snacks for Thrive.  If you need to change your sign up, please do that through slack - changing this invite won't update anything but your calendar :)",
+    );
     expect(text.endsWith('\r\n')).toBe(true);
   },
 );
@@ -66,6 +67,9 @@ it('preserves Unicode and punctuation through RFC text escaping and byte folding
     new ICAL.Component(ICAL.parse(text)).getFirstSubcomponent('vevent')!,
   );
   expect(event.summary).toBe(`Bring snacks for ${name}`);
+  expect(event.description).toBe(
+    `Reminder to bring snacks for ${name}.  If you need to change your sign up, please do that through slack - changing this invite won't update anything but your calendar :)`,
+  );
   for (const line of text.split('\r\n'))
     expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
 });

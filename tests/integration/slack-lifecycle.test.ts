@@ -132,9 +132,11 @@ it('replaces the private signup list with confirmation, without storing its resp
       replace_original: true,
       response_type: 'ephemeral',
     });
-    expect(message.text).toContain('Nov 1 at 9:30 AM');
+    expect(message.text).toContain('Thrive (sample) on Nov 1!');
     expect(message.text).toContain('Add to your calendar');
-    expect(message.text).not.toMatch(/11:45|America\/Chicago|2026-11-01/);
+    expect(message.text).not.toMatch(
+      /9:30|11:45|America\/Chicago|2026-11-01|Manage signup changes|already-imported|\/snack\b/,
+    );
     expect(
       message.blocks.some((block: Record<string, unknown>) => block.accessory),
     ).toBe(false);
@@ -327,13 +329,22 @@ it('shows an invalid signup in the original private message without creating an 
 });
 
 it('slash commands list effective availability, only your assignments, atomically move, cancel, and replay a cancellation', async () => {
-  expect((await command('list')).text).toContain('Nov 1 — Volunteer needed');
+  const list = await command('');
+  expect(list.text).toContain('Nov 1 — Volunteer needed');
+  expect(JSON.stringify(list)).not.toMatch(
+    /\/snack\b|Classes meet|09:30|11:45|America\/Chicago/,
+  );
+  expect(await command('list')).toEqual(list);
+  expect(await command('help')).toEqual(list);
   await command('signup 2026-11-01');
   await command('signup 2026-11-08', 'U_OTHER');
   const mine = await command('mine');
   expect(mine.text).toContain('Nov 1 —');
   expect(mine.text).not.toContain('Nov 8 —');
   expect(mine.text).toContain('Add to your calendar');
+  expect(JSON.stringify(mine)).not.toMatch(
+    /\/snack\b|Classes meet|09:30|11:45|America\/Chicago|already-imported|Page 1 of 1/,
+  );
   expect(
     mine.blocks
       .filter((b) => b.type === 'actions')
@@ -509,6 +520,183 @@ it('paginates own commitments without imposing a signup horizon', async () => {
     '2027-01-03',
   ])
     await command(`signup ${date}`);
-  expect((await command('mine')).text).toContain('/snack mine 2');
+  const first = await command('mine');
+  expect(first.text).toContain('Page 1 of 2');
+  expect(JSON.stringify(first)).not.toMatch(/\/snack\b/);
+  expect(
+    first.blocks
+      .flatMap((b) => b.elements ?? [])
+      .find((action) => action.action_id === 'snack_mine_next'),
+  ).toBeDefined();
   expect((await command('mine 2')).text).toContain('Jan 3 —');
+  const next = first.blocks
+    .flatMap((b) => b.elements ?? [])
+    .find((action) => action.action_id === 'snack_mine_next')!;
+  const tables = ['classes', 'operation_receipts', 'activity', 'deliveries'];
+  const before = await Promise.all(
+    tables.map(
+      async (table) =>
+        (await env.DB.prepare(`SELECT * FROM ${table} ORDER BY 1`).all())
+          .results,
+    ),
+  );
+  const tasks: Promise<unknown>[] = [];
+  const slack = new FakeSlack();
+  const previousFetch = globalThis.fetch;
+  let release!: () => void;
+  const slow = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.stubGlobal('fetch', async (request: Request) => {
+    await slow;
+    return slack.fetch(request);
+  });
+  try {
+    slack.enqueue(new Response('ok'));
+    const ack = await interact(
+      { action_id: next.action_id, value: next.value },
+      tasks,
+      privateSource,
+    );
+    expect(ack.status).toBe(200);
+    expect(await ack.text()).toBe('');
+    expect(slack.requests).toHaveLength(0);
+    release();
+    await Promise.all(tasks);
+    const second = JSON.parse(slack.requests[0]!.body) as Message & {
+      replace_original: boolean;
+    };
+    expect(slack.requests[0]!.url).toBe(sourceUrl);
+    expect(second.replace_original).toBe(true);
+    expect(second.text).toContain('Jan 3 —');
+    expect(second.text).not.toContain('Nov 1 —');
+    expect(JSON.stringify(second)).not.toMatch(/\/snack\b/);
+    const back = second.blocks
+      .flatMap((b) => b.elements ?? [])
+      .find((action) => action.action_id === 'snack_mine_previous')!;
+    slack.enqueue(new Response('ok'));
+    await interact(
+      { action_id: back.action_id, value: back.value },
+      tasks,
+      privateSource,
+    );
+    await Promise.all(tasks);
+    expect(JSON.parse(slack.requests[1]!.body).text).toContain('Nov 1 —');
+    slack.enqueue(new Response('ok'));
+    await interact(
+      { action_id: next.action_id, value: next.value },
+      tasks,
+      privateSource,
+    );
+    await Promise.all(tasks);
+    expect(JSON.parse(slack.requests[2]!.body).text).toBe(second.text);
+    expect(
+      await Promise.all(
+        tables.map(
+          async (table) =>
+            (await env.DB.prepare(`SELECT * FROM ${table} ORDER BY 1`).all())
+              .results,
+        ),
+      ),
+    ).toEqual(before);
+  } finally {
+    release();
+    await Promise.all(tasks);
+    vi.stubGlobal('fetch', previousFetch);
+  }
 });
+
+it('pagination reads the clicking user’s signups and never replaces a public message', async () => {
+  await command('signup 2026-11-01');
+  await command('signup 2026-11-08', 'U_OTHER');
+  const tasks: Promise<unknown>[] = [];
+  const slack = new FakeSlack();
+  const previousFetch = globalThis.fetch;
+  vi.stubGlobal('fetch', slack.fetch);
+  try {
+    slack.enqueue(Response.json({ ok: true }));
+    await interact(
+      {
+        action_id: 'snack_mine_next',
+        value: JSON.stringify({
+          groupId: 'thrive-fixture',
+          page: 1,
+          actorUserId: 'U_FIXTURE',
+        }),
+      },
+      tasks,
+      {
+        ...privateSource,
+        container: { is_ephemeral: false },
+        user: { id: 'U_OTHER' },
+      },
+    );
+    await Promise.all(tasks);
+    expect(slack.requests).toHaveLength(1);
+    expect(slack.requests[0]!.url).toBe(
+      'https://slack.com/api/chat.postEphemeral',
+    );
+    const reply = JSON.parse(slack.requests[0]!.body);
+    expect(reply).toMatchObject({ channel: 'C_FIXTURE', user: 'U_OTHER' });
+    expect(reply.text).toContain('Nov 8 —');
+    expect(reply.text).not.toContain('Nov 1 —');
+  } finally {
+    vi.stubGlobal('fetch', previousFetch);
+  }
+});
+
+it.each([-1, 1.5, '2', 10000])(
+  'rejects malformed pagination (%s) before any work is scheduled',
+  async (page) => {
+    const tasks: Promise<unknown>[] = [];
+    expect(
+      (
+        await interact(
+          {
+            action_id: 'snack_mine_next',
+            value: JSON.stringify({ groupId: 'thrive-fixture', page }),
+          },
+          tasks,
+        )
+      ).status,
+    ).toBe(400);
+    expect(tasks).toEqual([]);
+  },
+);
+
+it.each(['life_groups', 'classes'])(
+  'signup reads fail clearly without command guidance when %s is unavailable',
+  async (table) => {
+    await env.DB.prepare(
+      `ALTER TABLE ${table} RENAME TO unavailable_${table}`,
+    ).run();
+    const tasks: Promise<unknown>[] = [];
+    const slack = new FakeSlack();
+    const previousFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', slack.fetch);
+    try {
+      const mine = await command('mine');
+      expect(mine.text).toContain('Your signups are temporarily unavailable');
+      expect(mine.text).not.toMatch(/\/snack\b|may have been saved/);
+      slack.enqueue(new Response('ok'));
+      const ack = await interact(
+        {
+          action_id: 'snack_mine_next',
+          value: JSON.stringify({ groupId: 'thrive-fixture', page: 1 }),
+        },
+        tasks,
+        privateSource,
+      );
+      expect(ack.status).toBe(200);
+      await Promise.all(tasks);
+      const reply = JSON.parse(slack.requests[0]!.body);
+      expect(reply.text).toContain('Your signups are temporarily unavailable');
+      expect(reply.text).not.toMatch(/\/snack\b|may have been saved/);
+    } finally {
+      vi.stubGlobal('fetch', previousFetch);
+      await env.DB.prepare(
+        `ALTER TABLE unavailable_${table} RENAME TO ${table}`,
+      ).run();
+    }
+  },
+);

@@ -8,9 +8,15 @@ import {
   commandMessage,
   knownError,
   uncertainMessage,
+  ownSignupsUnavailable,
   type VolunteerCutoff,
 } from './commands';
-import { privacy, publicOrigin } from './messages';
+import {
+  privacy,
+  privateMessage,
+  publicOrigin,
+  type SlackMessage,
+} from './messages';
 import { sendSlack, slackResponseUrl, replaceSlackMessage } from './api';
 import { section } from './messages';
 
@@ -66,18 +72,32 @@ export async function handleInteraction(
   const workspace = object(payload.team).id;
   const channel = object(payload.channel).id;
   const user = object(payload.user).id;
-  const { groupId, localDate, assignmentId, targetDate } = value;
+  const { groupId, localDate, assignmentId, targetDate, page } = value;
+  const pageNavigation = ['snack_mine_previous', 'snack_mine_next'].includes(
+    String(action.action_id),
+  );
   if (
     ![workspace, channel, user].every(slackId) ||
     typeof groupId !== 'string' ||
-    typeof localDate !== 'string' ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(localDate) ||
     typeof action.action_ts !== 'string' ||
     !/^\d+\.\d+$/.test(action.action_ts) ||
-    !['snack_signup', 'snack_cancel', 'snack_change'].includes(
-      String(action.action_id),
-    ) ||
-    (action.action_id !== 'snack_signup' &&
+    ![
+      'snack_signup',
+      'snack_cancel',
+      'snack_change',
+      'snack_mine_previous',
+      'snack_mine_next',
+    ].includes(String(action.action_id)) ||
+    (pageNavigation &&
+      (typeof page !== 'number' ||
+        !Number.isInteger(page) ||
+        page < 1 ||
+        page > 9999)) ||
+    (!pageNavigation &&
+      (typeof localDate !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(localDate))) ||
+    (!pageNavigation &&
+      action.action_id !== 'snack_signup' &&
       (typeof assignmentId !== 'string' ||
         !/^[0-9a-f-]{36}$/.test(assignmentId))) ||
     (action.action_id === 'snack_change' &&
@@ -91,16 +111,51 @@ export async function handleInteraction(
   if (workspaceId !== env.SLACK_BOT_WORKSPACE_ID || channelId.startsWith('D'))
     return new Response('Unsupported workspace or channel.', { status: 403 });
   const responseUrl =
-    action.action_id === 'snack_signup' &&
+    (action.action_id === 'snack_signup' || pageNavigation) &&
     object(payload.container).is_ephemeral === true
       ? slackResponseUrl(payload.response_url)
       : null;
   try {
     const groups = await findChannelGroups(env.DB, workspaceId, channelId);
     if (groups.length !== 1 || groups[0]!.id !== groupId)
-      return new Response('Refresh /snack in the configured channel.', {
+      return new Response('These controls are not available in this channel.', {
         status: 403,
       });
+    if (pageNavigation) {
+      // Pagination is a current, private read. It has no mutation receipt or job.
+      // Fetch and delivery stay outside Slack's acknowledgment deadline.
+      context.waitUntil(
+        (async () => {
+          let message: SlackMessage;
+          try {
+            message = await commandMessage(
+              `mine ${page}`,
+              groups[0]!,
+              actorUserId,
+              '',
+              env,
+              clock,
+              cutoff,
+            );
+          } catch {
+            message = {
+              text: ownSignupsUnavailable,
+            };
+          }
+          const body = privateMessage(message);
+          if (responseUrl) {
+            const result = await replaceSlackMessage(responseUrl, body);
+            if (result.ok || result.retryAfter) return;
+          }
+          await sendSlack(env.SLACK_BOT_TOKEN!, 'chat.postEphemeral', {
+            channel: channelId,
+            user: actorUserId,
+            ...body,
+          });
+        })(),
+      );
+      return new Response(null, { status: 200 });
+    }
     const operation =
       action.action_id === 'snack_signup'
         ? 'signup'
@@ -135,7 +190,7 @@ export async function handleInteraction(
   } catch (error) {
     // Validation failures have no state change to commit. Give immediate private
     // guidance outside the ACK path; successful mutation replies live in D1.
-    const text = `${knownError(error) ? (error as Error).message : uncertainMessage}\n\n${privacy}`;
+    const text = `${pageNavigation ? ownSignupsUnavailable : knownError(error) ? (error as Error).message : uncertainMessage}\n\n${privacy}`;
     const fallback = () =>
       sendSlack(env.SLACK_BOT_TOKEN!, 'chat.postEphemeral', {
         channel: channelId,

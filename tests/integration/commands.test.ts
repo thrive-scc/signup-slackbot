@@ -40,8 +40,10 @@ it('signed command → D1 → private confirmation → independently parsed cale
     text: string;
   }>();
   expect(confirmation.response_type).toBe('ephemeral');
-  expect(confirmation.text).toContain('Nov 1 at 9:30 AM');
-  expect(confirmation.text).not.toMatch(/11:45|America\/Chicago|2026-11-01/);
+  expect(confirmation.text).toContain('Thrive (sample) on Nov 1!');
+  expect(confirmation.text).not.toMatch(
+    /9:30|11:45|America\/Chicago|2026-11-01|Manage signup changes|already-imported|\/snack\b/,
+  );
   expect(confirmation.text).toContain('Add to your calendar');
   expect(confirmation.text).toContain('signed up to bring snacks');
   expect(confirmation.text).toContain('visible to group administrators');
@@ -58,6 +60,9 @@ it('signed command → D1 → private confirmation → independently parsed cale
   );
   expect(event.startDate.toJSDate().toISOString()).toBe(
     '2026-11-01T15:30:00.000Z',
+  );
+  expect(event.description).toBe(
+    "Reminder to bring snacks for Thrive (sample).  If you need to change your sign up, please do that through slack - changing this invite won't update anything but your calendar :)",
   );
   const admin = await createWorker(
     () => ({ id: 'admin:fixture' }),
@@ -145,9 +150,9 @@ it.each([
   [{ text: 'signup 2027-02-30' }, 'valid date'],
   [{ text: 'signup 2025-12-28' }, 'weekly schedule'],
   [{ text: 'signup 2026-10-25' }, 'Signup closes'],
-  [{ text: 'help' }, '/snack list'],
-  [{ text: '' }, '/snack list'],
-  [{ text: 'signup next Sunday' }, '/snack list'],
+  [{ text: 'help' }, 'Nov 1 — Volunteer needed'],
+  [{ text: '' }, 'Nov 1 — Volunteer needed'],
+  [{ text: 'signup next Sunday' }, "That request wasn't recognized"],
 ])(
   'rejects unsupported context/date or supplies guidance: %j',
   async (overrides, message) => {

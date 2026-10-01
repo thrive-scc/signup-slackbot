@@ -5,7 +5,7 @@ import type { SignupReceipt } from '../../domain/signup';
 import { calendarLink } from '../calendar-download';
 import { readAssignment } from '../d1/signups';
 import { reminderTime } from '../../domain/scheduling';
-import { dateLabel, startTimeLabel } from './date-labels';
+import { dateLabel } from './date-labels';
 
 export const privacy =
   'Direct interactions with this bot may be visible to group administrators.';
@@ -20,24 +20,26 @@ export interface SlackMessage {
   blocks?: unknown[];
 }
 
+export function privateMessage(message: SlackMessage) {
+  return {
+    ...message,
+    text: `${message.text}\n\n${privacy}`,
+    ...(message.blocks
+      ? {
+          blocks: [
+            ...message.blocks,
+            {
+              type: 'context',
+              elements: [{ type: 'mrkdwn', text: privacy }],
+            },
+          ],
+        }
+      : {}),
+  };
+}
 export function privateReply(message: SlackMessage) {
   return Response.json(
-    {
-      response_type: 'ephemeral',
-      ...message,
-      text: `${message.text}\n\n${privacy}`,
-      ...(message.blocks
-        ? {
-            blocks: [
-              ...message.blocks,
-              {
-                type: 'context',
-                elements: [{ type: 'mrkdwn', text: privacy }],
-              },
-            ],
-          }
-        : {}),
-    },
+    { response_type: 'ephemeral', ...privateMessage(message) },
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }
@@ -113,6 +115,6 @@ export async function operationMessage(
       ? '\nThe usual reminder time has passed. Please remember to bring snacks for this upcoming class!'
       : '';
   return {
-    text: `${opening} to bring snacks for ${escapeSlack(group.name)} on ${dateLabel(assignment.localDate)} at ${startTimeLabel(assignment.startsAt, group.timezone)}!${lateReminder}\n\n<${link}|Add to your calendar>\n${calendarNote}\nUse \`/snack mine\` to manage your signups.`,
+    text: `${opening} to bring snacks for ${escapeSlack(group.name)} on ${dateLabel(assignment.localDate)}!${lateReminder}\n\n<${link}|Add to your calendar>`,
   };
 }

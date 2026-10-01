@@ -31,6 +31,8 @@ import type { VolunteerCutoff } from '../../domain/lifecycle';
 export type { VolunteerCutoff } from '../../domain/lifecycle';
 export const uncertainMessage =
   'We could not confirm the result. Your change may have been saved. Use `/snack mine` to check before making another change.';
+export const ownSignupsUnavailable =
+  'Your signups are temporarily unavailable. Please try again.';
 export const knownError = (error: unknown) =>
   error instanceof SignupError ||
   error instanceof ClassDateError ||
@@ -57,7 +59,6 @@ export async function commandMessage(
   cutoff: VolunteerCutoff | undefined,
   interaction?: { channelId: string; assignmentId?: string },
 ): Promise<SlackMessage> {
-  const guide = `Use \`/snack list\` to find a date and volunteer, or \`/snack mine\` to view and manage your signups.\nClasses meet ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][group.weekday]}, ${group.startTime}–${group.endTime} ${escapeSlack(group.timezone)}. Signup closes at class start.`;
   const buttonsEnabled =
     !!env.SLACK_BOT_TOKEN && env.SLACK_BOT_WORKSPACE_ID === group.workspaceId;
   if (text === '' || text === 'list' || text === 'help') {
@@ -71,7 +72,7 @@ export async function commandMessage(
         `${dateLabel(c.localDate)} — ${c.status === 'OPEN' ? 'Volunteer needed' : c.status === 'NO_SNACK' ? 'No snack needed' : `<@${c.volunteerUserId}> is signed up`}`,
     );
     return {
-      text: `${escapeSlack(group.name)}\n${descriptions.join('\n')}\n\n${guide}`,
+      text: `${escapeSlack(group.name)}\n${descriptions.join('\n')}`,
       blocks: [
         section(`*${escapeSlack(group.name)} · Upcoming classes*`),
         ...classes.map((c, i) => ({
@@ -87,7 +88,6 @@ export async function commandMessage(
               }
             : {}),
         })),
-        section(guide),
       ],
     };
   }
@@ -139,8 +139,30 @@ export async function commandMessage(
         blocks.push({ type: 'actions', elements });
       }
     }
-    const footer = `${selected.length ? `Page ${page} of ${Math.ceil(assignments.length / 8)}.` : 'No signups on this page.'}${assignments.length > page * 8 ? ` Next: \`/snack mine ${page + 1}\`.` : ''}\n${guide}\nAlready-imported calendar events will not update automatically. If a button has no confirmation, run \`/snack mine\` to check the result.`;
-    blocks.push(section(footer));
+    const footer = selected.length
+      ? assignments.length > 8
+        ? `Page ${page} of ${Math.ceil(assignments.length / 8)}.`
+        : ''
+      : 'No signups on this page.';
+    if (footer) blocks.push(section(footer));
+    if (buttonsEnabled) {
+      const pages = [
+        ...(page > 1 ? [{ label: 'Previous', page: page - 1 }] : []),
+        ...(assignments.length > page * 8
+          ? [{ label: 'Next', page: page + 1 }]
+          : []),
+      ];
+      if (pages.length)
+        blocks.push({
+          type: 'actions',
+          elements: pages.map((next) => ({
+            type: 'button',
+            text: plain(next.label),
+            action_id: `snack_mine_${next.label.toLowerCase()}`,
+            value: JSON.stringify({ groupId: group.id, page: next.page }),
+          })),
+        });
+    }
     return {
       text: `Your snack signups\n${lines.join('\n')}\n${footer}`,
       blocks,
@@ -194,7 +216,7 @@ export async function commandMessage(
     );
     return operationMessage(env, group, receipt);
   }
-  return { text: guide };
+  return { text: "That request wasn't recognized." };
 }
 
 export async function handleSnackCommand(
@@ -234,7 +256,7 @@ export async function handleSnackCommand(
     const groups = await findChannelGroups(env.DB, workspaceId, channelId);
     if (channelId.startsWith('D') || !groups.length)
       return privateReply({
-        text: 'Please use /snack in your life group’s configured Slack channel. Signups are not available in DMs or unconfigured channels.',
+        text: 'Please use the bot in your life group’s configured Slack channel. Signups are not available in DMs or unconfigured channels.',
       });
     if (groups.length !== 1)
       return privateReply({
@@ -253,7 +275,11 @@ export async function handleSnackCommand(
     );
   } catch (error) {
     return privateReply({
-      text: knownError(error) ? (error as Error).message : uncertainMessage,
+      text: /^mine(?:\s+([1-9]\d{0,3}))?$/.test(form.get('text')!.trim())
+        ? ownSignupsUnavailable
+        : knownError(error)
+          ? (error as Error).message
+          : uncertainMessage,
     });
   }
 }

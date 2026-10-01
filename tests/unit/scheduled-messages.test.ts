@@ -39,6 +39,7 @@ it.each(['OPEN', 'ASSIGNED', 'NO_SNACK'] as const)(
       );
       expect(text).toContain('Next week (Nov 8):');
       expect(text).not.toMatch(/brought|delivered/);
+      expect(text).not.toContain('/snack');
       if (nextState === 'ASSIGNED')
         expect(text).toContain('<@U_NEXT> is signed up');
       if (nextState === 'OPEN')

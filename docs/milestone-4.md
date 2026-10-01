@@ -83,18 +83,37 @@ and the volunteer still assigned after a rejected change.
 ## Slack usability
 
 - Autocomplete lists `/snack`, described as “volunteer to bring snacks.”
-- Public guidance offers `/snack list` and `/snack mine`. Existing text mutation
-  commands and previously issued controls remain compatible.
+- `/snack` shows availability by default. The `list` and `help` aliases remain
+  functional, but responses do not advertise them or repeat availability-command
+  instructions in other actions. Existing text mutation commands remain compatible.
 - Signup replaces the private availability message with confirmation. A durable
   private reply remains the fallback if that source message cannot be updated.
-- Dates appear as `Jun 5`; confirmation shows only the start time.
-- Own-signup lists offer cancellation, without a move selector.
-- Calendar links say **Add to your calendar**; `.ics` content is unchanged.
+- Dates appear as `Jun 5`; confirmations and reminders omit meeting times.
+- Own-signup lists offer cancellation, without a move selector or command guide.
+  Longer lists have **Previous**/**Next** buttons. These read the clicking user's
+  signups outside the acknowledgment and replace only private source messages;
+  the fallback is a private reply. They do not write receipts, activity or jobs.
+- Confirmation shows the commitment and **Add to your calendar**, with no command
+  guide or calendar-update explanation. The `.ics` description is:
+  “Reminder to bring snacks for {life group name}. If you need to change your sign up,
+  please do that through slack - changing this invite won't update anything but your calendar :)”
+  Full calendar dates, start/end instants, UID, DST handling and download activity
+  remain unchanged. Previously imported events will retain their old description.
 
 Acceptance includes signed interaction retries, no persisted response URL,
 slow/failed source updates, recoverable delivery and unchanged assignment state.
 Offline tests cannot establish behavior in the native Slack mobile app; confirm
 that on a phone after the deliberate pilot deployment.
+
+The 2026-09-30 wording follow-up passed the aggregate check: 23 unit, 117 actual
+local Worker/D1 and 10 Chromium tests, plus formatting, lint, types and build.
+Calendar descriptions were independently parsed, including escaped group names
+and DST boundary events. Signed pagination checks prove private reads, navigation
+in both directions, harmless repeats, early acknowledgment, no database writes,
+and clear read failures without command guidance. One older reminder expectation
+still included the meeting time and was updated to the requested date-only copy.
+This follow-up has not been redeployed or rendered in real Slack yet. The live
+evidence below describes the previous deployed wording.
 
 On 2026-09-30, formatting, lint, types, production build, 23 unit tests,
 98 local Worker/D1 integration tests and eight Chromium tests passed. Updated

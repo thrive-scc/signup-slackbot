@@ -41,7 +41,7 @@ export function calendarEvent(assignment: Assignment): string {
       `DTSTART:${utc(assignment.startsAt)}`,
       `DTEND:${utc(assignment.endsAt)}`,
       `SUMMARY:${escapeText(`Bring snacks for ${assignment.groupName}`)}`,
-      `DESCRIPTION:${escapeText(`This event represents your ${assignment.groupName} snack commitment. Manage changes through the Slack bot. Already-imported calendar events will not update automatically.`)}`,
+      `DESCRIPTION:${escapeText(`Reminder to bring snacks for ${assignment.groupName}.  If you need to change your sign up, please do that through slack - changing this invite won't update anything but your calendar :)`)}`,
       'END:VEVENT',
       'END:VCALENDAR',
     ]

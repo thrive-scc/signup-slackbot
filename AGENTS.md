@@ -7,11 +7,15 @@ using TypeScript, Cloudflare Workers, D1, and a lightweight SvelteKit admin UI.
 Use `/snack` as the slash command. Prefer guided buttons/selectors; do not use an
 LLM or sophisticated natural-language parsing.
 Slack's command listing displays only `/snack`, described as “volunteer to bring
-snacks.” Advertise only `/snack list` and `/snack mine` in volunteer guidance;
-keep direct signup/cancel/change commands functional without advertising them.
+snacks.” `/snack` is the default availability action; refer to it as `/snack`,
+never `/snack list`, and do not repeat its usage in other action responses.
+Own-signup responses contain no command instructions or meeting-time explanation.
+Keep direct signup/cancel/change commands functional without advertising them.
 Own-signup lists show cancellation only; do not offer a move selector. Slack
-dates use `Jun 5` without a year. Confirmations show only the start time, and
-calendar links say “Add to your calendar.” Calendar data retains full precision.
+dates use `Jun 5` without a year. Confirmations and reminders omit meeting times.
+Confirmation contains the commitment and “Add to your calendar,” without the
+signup-change/calendar-update explanation. Longer own-signup lists use Previous/
+Next buttons rather than page-command instructions. Calendar data retains full precision.
 
 Model life groups explicitly so scheduling and wording are not tied to Thrive
 or Sundays. Start with one configured group. Do not build group onboarding,
@@ -151,6 +155,9 @@ group's cadence are implicitly OPEN.
   groups. Use the class's configured local start/end times and timezone.
 - Explain that the event represents a snack commitment, changes are managed in
   Slack, and already-imported calendar events will not update automatically.
+  Use this event description, substituting the configured name:
+  “Reminder to bring snacks for {life group name}. If you need to change your sign up,
+  please do that through slack - changing this invite won't update anything but your calendar :)”
 - Use a stable event UID per assignment and correct DST-aware conversion.
 - Record calendar-download requests as useful admin activity: timestamp, group,
   class, assignment reference, and outcome. Record the actual requester identity

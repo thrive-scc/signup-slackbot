@@ -16,8 +16,8 @@ outstanding. No deployment is performed by the development commands.
 ## Behavior
 
 Slack's command listing shows only `/snack`, with the description
-“volunteer to bring snacks.” Volunteer guidance advertises `/snack list` and
-`/snack mine`; signup and cancellation use the guided controls. To choose another
+“volunteer to bring snacks.” `/snack` shows availability by default;
+`/snack mine` shows your commitments. Signup and cancellation use guided controls. To choose another
 date, cancel the old signup and use the availability list again.
 The other text commands below remain supported for compatibility and diagnostics.
 
@@ -38,8 +38,13 @@ cadence remains implicitly OPEN. Different groups can meet on different weekdays
 
 With a bot token configured for the group's workspace, availability includes
 **Bring snacks** buttons. The own-signup view includes only cancellation buttons
-before class starts, with no move selector. Controls carry assignment IDs,
-so a stale control cannot remove a replacement commitment. Controls still
+before class starts, with no move selector. Longer own-signup lists have
+**Previous**/**Next** page buttons and contain no command instructions or
+meeting-time explanation. Pagination reads the clicking user's current assignments
+without mutations or durable jobs; delivery is best effort outside the acknowledgment,
+replacing only a private source message, with a private API reply as fallback.
+Cancellation controls carry assignment IDs, so a stale control cannot remove a
+replacement commitment. Controls still
 revalidate ownership, cadence, time, and availability on the server. Unsupported
 or ambiguous workspace/channel mappings never select a group implicitly.
 
@@ -55,8 +60,10 @@ Local development uses the explicit identity `development:local-admin`.
 Calendar downloads for cancelled/replaced assignments return 404. Imported calendar
 events remain fire-and-forget and require manual deletion or replacement.
 Slack dates use abbreviated American month/day labels, such as `Nov 8`, without
-the year. Signup confirmations include only the start time, such as `9:30 AM`.
-Calendar links say **Add to your calendar**. Stored dates and calendar events
+the year. Signup confirmations and reminders omit meeting times.
+Calendar links say **Add to your calendar**. Signup confirmations omit command
+guidance and the calendar-update explanation; that explanation is in the event.
+Stored dates and calendar events
 retain full dates, both times and correct timezone conversion.
 
 ## Persistence and delivery

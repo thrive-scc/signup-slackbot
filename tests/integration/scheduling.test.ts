@@ -124,12 +124,15 @@ it('the actual scheduled entry sends at Thursday 3 PM, and repeated/concurrent p
   expect(messages(slack)).toEqual([
     {
       channel: 'U_FIXTURE',
-      text: expect.stringContaining('Nov 1 at 9:30 AM'),
+      text: expect.stringContaining('Thrive (sample) on Nov 1.'),
       unfurl_links: false,
       unfurl_media: false,
     },
   ]);
   expect(slack.requests[0]?.url).toBe('https://slack.com/api/chat.postMessage');
+  expect(messages(slack)[0]!.text).not.toMatch(
+    /9:30|11:45|America\/Chicago|\/snack list/,
+  );
   expect(await jobs()).toEqual([
     expect.objectContaining({
       kind: 'REMINDER',
@@ -353,7 +356,8 @@ it('each group uses its own weekday, reminder settings and channel', async () =>
   const slack = new FakeSlack();
   slack.enqueue(Response.json({ ok: true }));
   await cron('2026-11-03T00:15:00Z', slack);
-  expect(messages(slack)[0]?.text).toContain('Midweek on Nov 4 at 6:00 PM');
+  expect(messages(slack)[0]?.text).toContain('Midweek on Nov 4.');
+  expect(messages(slack)[0]?.text).not.toContain('6:00 PM');
   slack.enqueue(Response.json({ ok: true }));
   await cron('2026-11-05T00:00:00Z', slack);
   expect(messages(slack)[1]?.channel).toBe('C_MIDWEEK');

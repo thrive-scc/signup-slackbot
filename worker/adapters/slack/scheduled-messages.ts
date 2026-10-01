@@ -2,15 +2,14 @@ import type { ClassOccurrence } from '../../domain/classes';
 import type { ScheduledGroup } from '../../domain/life-group';
 import { escapeSlack, type SlackMessage } from './messages';
 import type { Assignment } from '../../domain/signup';
-import { dateLabel, startTimeLabel } from './date-labels';
+import { dateLabel } from './date-labels';
 
 export function reminderMessage(
   group: ScheduledGroup,
   assignment: Assignment,
 ): SlackMessage {
-  const time = startTimeLabel(assignment.startsAt, group.timezone);
   return {
-    text: `A friendly reminder: you’re signed up to bring snacks for ${escapeSlack(group.name)} on ${dateLabel(assignment.localDate)} at ${time}. Thank you! Use \`/snack mine\` in <#${group.channelId}> to manage your commitment.`,
+    text: `A friendly reminder: you’re signed up to bring snacks for ${escapeSlack(group.name)} on ${dateLabel(assignment.localDate)}. Thank you! Use \`/snack mine\` in <#${group.channelId}> to manage your commitment.`,
   };
 }
 
@@ -32,7 +31,7 @@ export function classStartMessage(
       ? `<@${next.volunteerUserId}> is signed up to bring snacks.`
       : next.status === 'NO_SNACK'
         ? 'Snacks are not needed.'
-        : 'We need a snack volunteer! Use `/snack list` in this channel to sign up.';
+        : 'We need a snack volunteer!';
   return {
     text: `${current}\nNext week (${dateLabel(next.localDate)}): ${following}`,
   };
