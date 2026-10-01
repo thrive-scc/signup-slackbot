@@ -202,6 +202,17 @@ test('a stale admin page cannot cancel a volunteer who signed up after it loaded
       .getByRole('listitem', { name: 'Class 2026-11-15' })
       .getByRole('link', { name: 'U_RACE_FIXTURE' }),
   ).toBeVisible();
+  await page
+    .getByRole('button', { name: 'View activity and messages' })
+    .click();
+  const rejected = page
+    .getByRole('list', { name: 'Bot activity' })
+    .getByRole('listitem')
+    .filter({ hasText: 'Mark no snack' })
+    .filter({ hasText: '2026-11-15' });
+  await expect(rejected).toContainText('Class had changed');
+  await expect(rejected).toContainText('Volunteer at request U_RACE_FIXTURE');
+  await expect(rejected).not.toContainText('Previous volunteer');
 });
 
 test('shows the empty state without manufacturing configuration', async ({
@@ -217,11 +228,130 @@ test('shows the empty state without manufacturing configuration', async ({
 test('deployable Worker denies admin pages, API, and static assets', async ({
   request,
 }) => {
-  for (const path of ['/', '/index.html', '/api/admin/groups']) {
+  for (const path of [
+    '/',
+    '/index.html',
+    '/api/admin/groups',
+    '/api/admin/operations?groupId=thrive-fixture',
+  ]) {
     const response = await request.get('http://127.0.0.1:8789' + path);
     expect(response.status()).toBe(503);
     expect(await response.text()).toBe('Admin access is not configured.');
   }
+});
+
+test('admin can inspect real signup, calendar and cancellation history with pending messages on mobile and desktop', async ({
+  page,
+  request,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const payload = signedCommand({
+    text: 'signup 2026-11-29',
+    user_id: 'U_HISTORY_FIXTURE',
+    trigger_id: 'browser-history-signup',
+  });
+  const signup = await request.post('/slack/commands', {
+    data: payload.body,
+    headers: payload.headers,
+  });
+  expect(signup.status()).toBe(200);
+  const link = /<(http:[^|]+)\|/.exec((await signup.json()).text)![1]!;
+  expect((await request.get(link)).status()).toBe(200);
+  await page.goto('/');
+  await page
+    .getByRole('button', { name: 'Mark no snack for 2026-11-29' })
+    .click();
+  await page.getByRole('button', { name: 'Confirm change' }).click();
+  await expect(
+    page.getByRole('status', { name: 'Class update' }),
+  ).toContainText('cancellation notice is queued');
+  const opened = page.waitForResponse((response) =>
+    response.url().includes('/api/admin/operations?'),
+  );
+  await page
+    .getByRole('button', { name: 'View activity and messages' })
+    .click();
+  expect((await opened).status()).toBe(200);
+  const panel = page.getByRole('region', {
+    name: 'Activity and messages for Thrive (sample)',
+  });
+  const activity = panel.getByRole('list', { name: 'Bot activity' });
+  const download = activity
+    .getByRole('listitem')
+    .filter({ hasText: 'Calendar download request' })
+    .filter({ hasText: '2026-11-29' });
+  await expect(download).toContainText('Download served');
+  await expect(download).toContainText('Requester unknown (calendar link)');
+  await expect(download).toContainText('does not confirm calendar import');
+  const cancellation = activity
+    .getByRole('listitem')
+    .filter({ hasText: 'Mark no snack' })
+    .filter({ hasText: '2026-11-29' });
+  await expect(cancellation).toContainText('By admin:browser-fixture');
+  await expect(cancellation).toContainText(
+    'Previous volunteer U_HISTORY_FIXTURE',
+  );
+  await expect(
+    cancellation.getByRole('link', { name: 'U_HISTORY_FIXTURE' }),
+  ).toHaveAttribute('href', 'slack://user?team=T_FIXTURE&id=U_HISTORY_FIXTURE');
+  const notice = panel
+    .getByRole('list', { name: 'Message deliveries' })
+    .getByRole('listitem')
+    .filter({ hasText: 'Cancellation notice' })
+    .filter({ hasText: '2026-11-29' });
+  await expect(notice).toContainText('Pending');
+  await expect(notice).toContainText('To U_HISTORY_FIXTURE');
+  await expect(notice).toContainText('0 attempts');
+  const filtered = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === '/api/admin/operations' &&
+      url.searchParams.get('messages') === 'all'
+    );
+  });
+  await panel.getByLabel('Messages to show').selectOption('all');
+  expect((await filtered).status()).toBe(200);
+  await expect(
+    panel.getByRole('button', { name: 'Refresh activity' }),
+  ).toBeEnabled();
+  await page.setViewportSize({ width: 375, height: 812 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await panel.screenshot({ path: 'test-results/operations-mobile.png' });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await panel.screenshot({ path: 'test-results/operations-desktop.png' });
+  await page
+    .getByRole('button', { name: 'Hide activity and messages' })
+    .click();
+  await expect(panel).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('activity API failure is visible and retry loads the actual history', async ({
+  page,
+}) => {
+  await page.route('**/api/admin/operations?*', (route) =>
+    route.fulfill({ status: 503 }),
+  );
+  await page.goto('/');
+  await page
+    .getByRole('button', { name: 'View activity and messages' })
+    .click();
+  const panel = page.getByRole('region', {
+    name: 'Activity and messages for Thrive (sample)',
+  });
+  await expect(panel.getByRole('alert')).toContainText(
+    'Unable to load activity and messages',
+  );
+  await expect(panel.getByText('No bot activity recorded.')).toHaveCount(0);
+  await page.unroute('**/api/admin/operations?*');
+  await panel.getByRole('button', { name: 'Try again' }).click();
+  await expect(panel.getByRole('list', { name: 'Bot activity' })).toBeVisible();
+  await expect(panel.getByRole('alert')).toHaveCount(0);
 });
 
 test('local scheduled entry executes and unknown URLs remain 404', async ({

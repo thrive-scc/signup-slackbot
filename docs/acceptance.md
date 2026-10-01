@@ -1,7 +1,7 @@
 # Milestone 0 acceptance and evidence
 
-Current scheduling and lifecycle behavior, reproduction steps and evidence limits
-are in [Milestone 3](milestone-3.md) and [Milestone 2](milestone-2.md); the first
+Current operations, scheduling and lifecycle behavior, reproduction steps and evidence limits
+are in [Milestone 4](milestone-4.md), [Milestone 3](milestone-3.md) and [Milestone 2](milestone-2.md); the first
 slice is in [Milestone 1](milestone-1.md).
 The harness evidence below is preserved as the Milestone 0 baseline.
 

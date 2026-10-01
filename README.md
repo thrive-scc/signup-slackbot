@@ -8,7 +8,7 @@ times and bounded retries. See [Milestone 3](docs/milestone-3.md) for the timing
 rules and local demonstration, and [Milestone 2](docs/milestone-2.md) for lifecycle
 behavior. Initial Slack signup/list interactions have been exercised in the pilot;
 calendar import, deployed cron and production authentication remain unverified.
-Milestone 4 adds Slack usability and deployment work; see
+Milestone 4 adds Slack usability, a local admin activity/message view and deployment work; see
 [current scope](docs/milestone-4.md). The isolated Cloudflare pilot is deployed; see
 [test deployment setup and evidence](docs/test-deployment.md).
 Product rules live in [AGENTS.md](AGENTS.md).
@@ -32,6 +32,10 @@ sh scripts/dev.sh start
 Open <http://localhost:5173>. You should see **Thrive (sample)**, Sunday,
 09:30–11:45, and America/Chicago. Refresh reads the data again through the local
 Worker and D1. Source edits reload the UI; Worker edits restart Wrangler.
+Use **View activity and messages** to inspect recent bot activity and pending or
+failed delivery work for the group. **All messages** includes sent/skipped history;
+**Refresh activity** reads again without sending a message. The view is local while
+deployed admin authentication remains unimplemented.
 
 Startup builds the static assets, applies migrations, and inserts the synthetic
 group if absent. It does not overwrite existing group edits. Stop with Ctrl-C or,
@@ -158,6 +162,7 @@ entry and separate remote D1; its admin UI is consequently unavailable.
 ## More context
 
 - [Cloudflare/Slack test deployment](docs/test-deployment.md)
+- [Milestone 4 operations view, demonstration and remaining work](docs/milestone-4.md)
 - [Milestone 3 scheduling, timing policies and demonstration](docs/milestone-3.md)
 - [Milestone 2 behavior and demonstration](docs/milestone-2.md)
 - [Milestone 1 behavior and demonstration](docs/milestone-1.md)

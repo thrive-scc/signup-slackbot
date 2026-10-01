@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte';
   import type { GroupOverview } from '../../worker/domain/life-group';
   import type { ClassOccurrence } from '../../worker/domain/classes';
+  import GroupOperations from '$lib/GroupOperations.svelte';
   let overview = $state<
     (GroupOverview & { classes: ClassOccurrence[] }) | null
   >(null);
@@ -198,6 +199,7 @@
               </li>
             {/each}
           </ul>
+          <GroupOperations {group} />
         </article>
       {/each}
     {:else}

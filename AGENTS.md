@@ -32,6 +32,10 @@ class-start messages, durable scheduled delivery and catch-up expiry. The user
 accepted the timing policies on 2026-09-30; normal local/deployable entries now
 enable volunteer cancellation/date changes until class start.
 See docs/milestone-2.md and docs/milestone-3.md for behavior, setup and evidence.
+Milestone 4 adds a read-only, group-scoped activity/delivery view behind the admin
+boundary. It uses existing D1 records, limits each list to 50 with truncation flags,
+and does not retry deliveries or change signups. See docs/milestone-4.md for its
+demonstration and remaining authentication, installation and retention work.
 Local verification and real-service evidence must be reported separately.
 An isolated Cloudflare test deployment and Slack app now exist; see
 docs/test-deployment.md for resource IDs, CLI workflow and live verification gaps.
